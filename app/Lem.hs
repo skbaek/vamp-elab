@@ -403,23 +403,6 @@ congAux ((x, y) : xys) = Cut'(y === x) (EqS' x y) . congAux xys
 eqTrans2 :: Term -> Term -> Term -> Term -> Prf
 eqTrans2 w x y z = Cut'(x === z) (EqT' x y z) (EqT' w x z)
 
--- -- pwy : |- w = y
--- -- pxz : |- x = z 
--- -- eqCong w x y z pwy pxz : |- (w = x) <=> (y = z) 
--- eqCong' :: Term -> Term -> Term -> Term -> Prf -> Prf -> Prf
--- eqCong' w x y z pwy pxz = cuts [(w === y, pwy), (x === z, pxz)] $ eqCong w x y z 
--- 
--- -- eqCong w x y z pwy pxz : w = y, x = z |- (w = x) <=> (y = z) 
--- eqCong :: Term -> Term -> Term -> Term -> Prf
--- eqCong w x y z = 
---   iffRFull (w === x) (y === z) 
---     (Cut'(y === w) (EqS' w y) $ eqTrans2 y w x z) -- w = y, x = z, w = x |- y = z
---     (Cut'(z === x) (EqS' x z) $ eqTrans2 w y z x) -- w = y, x = z, y = z |- w = x
-
--- eqCong :: (Term, Term, Prf) -> (Term, Term, Prf) -> Prf
--- eqCong tax@(a, x, _) tby@(b, y, _) = 
---   congAux [tax, tby] $ iffRFull (a === b) (x === y) (EqC (a, x, Id' (a === x)) (b, y, Id' (b === y))) (EqC (x, a, Id' (x === a)) (y, b, Id' (y === b))) 
-
 iffRFull :: Form -> Form -> Prf -> Prf -> Prf
 iffRFull f g po pr = IffF' f g (impFAC f g po) (impFAC g f pr)
 
@@ -428,15 +411,6 @@ relCong :: Funct -> [Term] -> [Term] -> IO Prf
 relCong r xs ys = do 
   xys <- zipM xs ys 
   return $ congAux xys $ iffRFull (Rel r xs) (Rel r ys) (RelC' r xs ys) (RelC' r ys xs)
-
--- relCong :: Text -> [(Term, Term, Prf)] -> Prf
--- relCong r xyps = 
---   let (xs, ys, _) = unzip3 xyps in
---   let xyps' = map (\ (x_, y_, _) -> (x_, y_, Id' (x_ === y_))) xyps in
---   let yxps = map (\ (x_, y_, _) -> (y_, x_, Id' (y_ === x_))) xyps in
---   let f = Rel r xs in
---   let g = Rel r ys in
---   congAux xyps $ iffRFull f g (RelC' r xyps') (RelC' r yxps)
 
 notTF :: Form -> Form -> Prf -> Prf
 notTF f g p = NotT' f $ NotF' g p

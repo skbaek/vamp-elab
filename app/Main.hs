@@ -18,33 +18,8 @@ import Data.List as L
 import Data.Set as S
 import Data.Map as HM
 
-proofNames :: Proof -> Set Text
-proofNames (Id_ _ nt nf) = S.fromList [nt, nf]
-proofNames (Cut_ _ pf pt) = S.union (proofNames pf) (proofNames pt)
-proofNames (FunC_ _ nts nf) = S.fromList (nf : nts)
-proofNames (RelC_ _ nts nt nf) = S.fromList (nt : nf : nts)
-proofNames (EqR_ _ nf) = S.fromList [nf]
-proofNames (EqS_ _ nt nf) = S.fromList [nt, nf]
-proofNames (EqT_ _ nxy nyz nxz) = S.fromList [nxy, nyz, nxz]
-proofNames (NotT_ _ nm p) = S.insert nm $ proofNames p
-proofNames (NotF_ _ nm p) = S.insert nm $ proofNames p
-proofNames (OrT_ _ nm ps) = S.insert nm $ S.unions $ L.map proofNames ps
-proofNames (OrF_ _ nm _ p) = S.insert nm $ proofNames p
-proofNames (AndT_ _ nm _ p) = S.insert nm $ proofNames p
-proofNames (AndF_ _ nm ps) = S.insert nm $ S.unions $ L.map proofNames ps
-proofNames (ImpT_ _ nm pa pc) = S.insert nm $ S.union (proofNames pa) (proofNames pc)
-proofNames (ImpFA_ _ nm p) = S.insert nm $ proofNames p
-proofNames (ImpFC_ _ nm p) = S.insert nm $ proofNames p
-proofNames (IffTO_ _ nm p) = S.insert nm $ proofNames p
-proofNames (IffTR_ _ nm p) = S.insert nm $ proofNames p
-proofNames (IffF_ _ nm po pr) = S.insert nm $ S.union (proofNames po) (proofNames pr)
-proofNames (FaT_ _ nm _ p) = S.insert nm $ proofNames p
-proofNames (FaF_ _ nm _ p) = S.insert nm $ proofNames p
-proofNames (ExT_ _ nm _ p) = S.insert nm $ proofNames p
-proofNames (ExF_ _ nm _ p) = S.insert nm $ proofNames p
-proofNames (RelD_ _ p) = proofNames p
-proofNames (AoC_ _ _ p) = proofNames p
-proofNames (Open_ _) = S.empty
+stepHypNames :: Step -> Set Text
+stepHypNames (_, _, nms, _) = S.fromList nms
 
 stepHyps :: Step -> [Text]
 stepHyps (_, _, ns, _) = ns
@@ -76,19 +51,20 @@ hypsSteps verbose tptp tstp = do
   when verbose $ mapM_ (pb . ppStep) stps
   return (ntf, sf, ftn, stps)
 
-writeProof :: String -> Proof -> IO ()
-writeProof nm prf = do
+writeProof :: String -> [Text] -> Proof -> IO ()
+writeProof nm nms prf = do
   Prelude.putStrLn $ "Writing proof : " <> nm
-  TIO.writeFile nm $ tlt $ serList serText (S.toList $ proofNames prf) <> serProof prf
+  TIO.writeFile nm $ tlt $ serList serText nms <> serProof prf
 
 elaborate :: Bool -> String -> String -> String -> IO ()
 elaborate vb tptp tstp cstp = do
   when vb $ pt "Reading problem and solution...\n"
   (ntf, sf, ftn, stps) <- hypsSteps vb tptp tstp
   when vb $ pt "Elaborating solution...\n"
+  let nms = L.foldl S.union S.empty (L.map stepHypNames stps)
   prf <- elab vb ntf sf ftn stps
   when vb $ pt "Writing proof : \n"
-  writeProof cstp prf
+  writeProof cstp (S.toList nms) prf
 
 mainArgs :: [String] -> IO ()
 mainArgs (tptp : tstp : cstp : flags) = do
