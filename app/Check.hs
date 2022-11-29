@@ -4,6 +4,7 @@
 module Check where
 
 import Types
+import LocalTypes
 import Basic
 import Parse
 import PP (ppSignForm, ppElab, ppForm, ppTerm, ppFunct, ppList, ppListNl, ppSetNl, ppNL, diffTrail)

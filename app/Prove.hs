@@ -4,6 +4,7 @@
 module Prove where
 
 import Types
+import LocalTypes
 import Basic
 import Norm
 import Lem

@@ -5,6 +5,7 @@ module Sat where
 -- import System.Environment
 import System.Process
 import Types
+import LocalTypes
 import Basic
 import PP
 import Data.Text.Lazy as T

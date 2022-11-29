@@ -4,6 +4,7 @@
 module Elab where
 
 import Types
+import LocalTypes
 import Basic
 import PP 
 import Prove 

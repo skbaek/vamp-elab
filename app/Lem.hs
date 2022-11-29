@@ -4,6 +4,7 @@
 module Lem where
 
 import Types
+import LocalTypes
 import Basic
 import Data.List
 import Data.Text.Lazy ( Text )

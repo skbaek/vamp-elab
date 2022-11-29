@@ -5,6 +5,7 @@ module Main where
 
 import Basic
 import Types
+import LocalTypes
 import PP
 import Elab (elab)
 import Parse
