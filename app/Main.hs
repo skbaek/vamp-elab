@@ -18,9 +18,6 @@ import Data.List as L
 import Data.Set as S
 import Data.Map as HM
 
-stepHypNames :: Step -> Set Text
-stepHypNames (_, _, nms, _) = S.fromList nms
-
 stepHyps :: Step -> [Text]
 stepHyps (_, _, ns, _) = ns
 
@@ -51,10 +48,8 @@ hypsSteps verbose tptp tstp = do
   when verbose $ mapM_ (pb . ppStep) stps
   return (ntf, sf, ftn, stps)
 
-writeProof :: String -> [Text] -> Proof -> IO ()
-writeProof nm nms prf = do
-  Prelude.putStrLn $ "Writing proof : " <> nm
-  TIO.writeFile nm $ tlt $ serList serText nms <> serProof prf
+stepHypNames :: Step -> Set Text
+stepHypNames (_, _, nms, _) = S.fromList nms
 
 elaborate :: Bool -> String -> String -> String -> IO ()
 elaborate vb tptp tstp cstp = do
@@ -66,11 +61,8 @@ elaborate vb tptp tstp cstp = do
   when vb $ pt "Writing proof : \n"
   writeProof cstp (S.toList nms) prf
 
-mainArgs :: [String] -> IO ()
-mainArgs (tptp : tstp : cstp : flags) = do
+main :: IO ()
+main = do 
+  (tptp : tstp : cstp : flags) <- getArgs 
   (Just ()) <- timeout 60000000 (elaborate ("silent" `notElem` flags) tptp tstp cstp) 
   skip
-mainArgs _ = error "invalid elab args"
-
-main :: IO ()
-main = getArgs >>= mainArgs
