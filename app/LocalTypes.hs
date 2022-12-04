@@ -6,18 +6,18 @@ import Types
 import Basic
 import Parse
 import PP
-import Data.Text.Lazy as T (Text)
 import Data.List as L 
-import Data.Text.Lazy.Builder as B ( Builder ) 
 import Data.Map as HM
 import Data.Set as S
+import qualified Data.ByteString as BS
 import Control.Monad as M (MonadPlus(mzero))
 import Data.Maybe (fromMaybe)
+import Data.ByteString.Builder (Builder)
 
 data Stelab =
-    InfStep Form Prf Text
-  | DefStep Form Form Prf Text
-  | AoCStep [Term] Form Form Prf Text
+    InfStep Form Prf BS
+  | DefStep Form Form Prf BS
+  | AoCStep [Term] Form Form Prf BS
   deriving (Show)
 
 data Prf =
@@ -39,12 +39,12 @@ data Prf =
   | IffTO' Form Form Prf
   | IffTR' Form Form Prf
   | IffF' Form Form Prf Prf
-  | FaT' [(Text, Term)] Form Prf
-  | FaF' [Text] Int Form Prf
-  | ExT' [Text] Int Form Prf
-  | ExF' [(Text, Term)] Form Prf
+  | FaT' [(BS, Term)] Form Prf
+  | FaF' [BS] Int Form Prf
+  | ExT' [BS] Int Form Prf
+  | ExF' [(BS, Term)] Form Prf
   | Cut' Form Prf Prf 
-  | Mrk Text Prf 
+  | Mrk BS Prf 
   | Open'
   deriving (Show)
 
@@ -130,9 +130,9 @@ data Dir =
 data Lrat = Del Int [Int] | Add Int [Form] [Int]
   deriving (Show)
 
-type VC = (HM.Map Text (Set Text), HM.Map Text (Set Text)) 
-type VR = (HM.Map Text Text, HM.Map Text Text) 
-type VM = HM.Map Text Term
+type VC = (HM.Map BS (Set BS), HM.Map BS (Set BS)) 
+type VR = (HM.Map BS BS, HM.Map BS BS) 
+type VM = HM.Map BS Term
 
 data Path =
     NewRel Funct Int
@@ -153,8 +153,8 @@ data PrePath =
     PreRel Funct Int
   | PreFun Funct Int
   | PreEq
-  | PreFa [Text]
-  | PreEx [Text]
+  | PreFa [BS]
+  | PreEx [BS]
   | PreImpL
   | PreImpR
   | PreIffL
@@ -165,22 +165,21 @@ data PrePath =
   deriving (Ord, Eq)
 
 type Sig = HM.Map [Path] Int
-type Sigs = HM.Map Text Sig
+type Sigs = HM.Map BS Sig
 
 type RSTA = (VM, Maybe (Form, Dir), [Form], [Form], [Form])
 type SST = (VM, [Form], [Form], [(Term, Term)])
 type EFS = (VM, Maybe Bool, [Form])
 type FSTA = (VM, [Form])
 type EQFS = (VM, [Form], [(Term, Term)])
-type MTT = HM.Map Text Text
-type MTI = HM.Map Text Int
+type MTT = HM.Map BS BS
+type MTI = HM.Map BS Int
 type USOL = [Term]
 
-type Step = (Text, Text, [Text], Form) -- (name, inference, hyps, conc)
+type Step = (BS, BS, [BS], Form) -- (name, inference, hyps, conc)
 
-type Nodes = HM.Map Text (Form, Bool, Int)
+type Nodes = HM.Map BS (Form, Bool, Int)
 
-type Invranch = HM.Map (Form, Bool) Text
 
 agvmt :: VM -> Term -> Term
 agvmt gm (Var v) =
@@ -245,7 +244,7 @@ appVrTerm :: VR -> Term -> Term
 appVrTerm vr (Var v) =
   case HM.lookup v (fst vr) of
     Just x -> Var x
-    _ -> et "appVrTerm : no mapping"
+    _ -> error "appVrTerm : no mapping"
 appVrTerm vw (Fun f xs) = Fun f $ L.map (appVrTerm vw) xs
 
 appVrForm :: VR -> Form -> Form
@@ -259,13 +258,13 @@ appVrForm vr (And fs) = And $ L.map (appVrForm vr) fs
 appVrForm vr (Rel r xs) = Rel r $ L.map (appVrTerm vr) xs
 appVrForm vr (Eq x y) = Eq (appVrTerm vr x) (appVrTerm vr y)
 
-pairWithVR' :: VR -> Text -> IO (Text, Term)
+pairWithVR' :: VR -> BS -> IO (BS, Term)
 pairWithVR' (vw, _) v = 
   case HM.lookup v vw of 
     Just w -> return (v, Var w)
     _ -> mzero
 
-pairWithVR :: VR -> [(Text, Term)] -> Text -> Term
+pairWithVR :: VR -> [(BS, Term)] -> BS -> Term
 pairWithVR (vw, _) wxs v =
   fromMaybe zt ( do w <- HM.lookup v vw
                     snd <$> L.find ((w ==) . fst) wxs )
@@ -285,30 +284,41 @@ formSJ _ = False
 elabSingleJunct :: Elab -> Bool
 elabSingleJunct ((_, _, f), _, _) = formSJ f
 
-gFunFunctor :: Gterm -> Maybe Text
-gFunFunctor (Gfun t []) = return t
-gFunFunctor _ = Nothing
+gentToText :: Gent -> Maybe BS
+gentToText (Genf t []) = return t
+gentToText _ = Nothing
 
-afToStep :: AF -> IO Step
-afToStep (n, _, g, Just (Gfun "file" [_, Gfun m []], _)) = return (n, "file", [m], g)
-afToStep (n, _, g, Just (Gfun "introduced" [Gfun "predicate_definition_introduction" [],
-  Glist [Gfun "new_symbols" [Gfun "naming" [],Glist [Gfun r []]]]], _)) =
+anfToStep :: Anf -> Maybe Step
+anfToStep (n, r, g, Just (Genf "file" [_, Genf m []], _)) = return (n, "file", [m], conjecturize r g)
+anfToStep (n, _, g, Just (Genf "introduced" [Genf "predicate_definition_introduction" [],
+  Genl [Genf "new_symbols" [Genf "naming" [],Genl [Genf r []]]]], _)) =
     return (n, "predicate_definition_introduction", [], g)
-afToStep (n, _, g, Just (Gfun "introduced" [Gfun "avatar_definition" [],
-  Glist [Gfun "new_symbols" [Gfun "naming" [], Glist [Gfun r []]]]], _)) =
+anfToStep (n, _, g, Just (Genf "introduced" [Genf "avatar_definition" [],
+  Genl [Genf "new_symbols" [Genf "naming" [], Genl [Genf r []]]]], _)) =
     return (n, "avatar_definition", [], g)
-afToStep (n, _, g, Just (Gfun "introduced" [Gfun "choice_axiom" [], Glist []], _)) =
+anfToStep (n, _, g, Just (Genf "introduced" [Genf "choice_axiom" [], Genl []], _)) =
   return (n, "choice_axiom", [], g)
-afToStep (n, _, g, Just (Gfun "inference" [Gfun "avatar_sat_refutation" [], _, Glist l], _)) = do
-  txs <- cast (mapM gFunFunctor l)
+anfToStep (n, _, g, Just (Genf "inference" [Genf "avatar_sat_refutation" [], _, Genl l], _)) = do
+  txs <- mapM gentToText l
   return (n, "avatar_sat_refutation", txs, g)
-afToStep (n, _, g, Just (Gfun "inference" [Gfun r [], _, Glist l], _)) = do
-  txs <- cast (mapM gFunFunctor l)
+anfToStep (n, _, g, Just (Genf "inference" [Genf r [], _, Genl l], _)) = do
+  txs <- mapM gentToText l
   return (n, r, txs, g)
-afToStep _ = error "AF-to-step failure"
+anfToStep (_, _, _, Just (ft, _)) = error $ "AF-to-step failure (Just) : " ++ show (ppGent ft) ++ "\n"
+anfToStep (_, _, _, Nothing) = error "AF-to-step failure (Nothing)"
 
-tstpToSteps :: String -> IO [Step]
-tstpToSteps tstp = parseName tstp >>= mapM afToStep . sortAfs
+sortSteps :: [Step] -> [Step]
+sortSteps = sortBy compareSteps
+
+compareSteps :: Step -> Step -> Ordering
+compareSteps (m :> ms, _, _, _) (n :> ns, _, _, _) =
+  case compare m n of
+    EQ ->
+      case (bs2int ms, bs2int ns) of
+        (Just i, Just j) -> compare i j
+        _ -> error "Cannot compare step names"
+    other -> other
+compareSteps _ _ = LT
 
 ppStep :: Step -> Builder
 ppStep (n, r, ns, f) =
@@ -338,17 +348,19 @@ ppLrat :: Lrat -> Builder
 ppLrat (Del k ks) = ppInt k  <> ". Del " <> ppInter " " (L.map ppInt ks)
 ppLrat (Add k fs ms) = ppInt k  <> ". Add " <> ppInter " " (L.map ppForm fs) <> ", Using : " <> ppInter  " " (L.map ppInt ms)
 
-ppMapping :: (Text, Term) -> Builder
+ppMapping :: (BS, Term) -> Builder
 ppMapping (t, x) = ft t <> " |-> " <> ppTerm x
 
-ppVmap :: (Text, Text) -> Builder
+ppVmap :: (BS, BS) -> Builder
 ppVmap (v, w) = ft $  v <> " <-|-> " <> w
 
 ppVR :: VR -> Builder
 ppVR (vw, _) = ppListNl ppVmap (HM.toList vw)
 
-ppVCAux :: HM.Map Text (Set Text) -> Builder
+ppVCAux :: HM.Map BS (Set BS) -> Builder
 ppVCAux vw = ppListNl (\ (v_, ws_) -> ft v_ <> " |-> " <> ppList ft (S.toList ws_)) (HM.toList vw)
 
 ppVC :: VC -> Builder
 ppVC (vws, wvs) = ppVCAux vws <> "-------------------------------------\n" <> ppVCAux wvs
+
+type Invranch = HM.Map (Bool, Form) BS

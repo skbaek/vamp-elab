@@ -9,12 +9,9 @@ import Basic
 import Norm
 import Lem
 import PP
-import Check (verify)
 
-import Data.Text.Lazy.Builder (Builder)
 
 import Data.List as L (length, null, map, find, foldl, any, filter, concatMap, concat, all, (\\))
-import Data.Text.Lazy as T (Text, unpack)
 import Data.Set as S
   ( Set, empty, isSubsetOf, toList, union, intersection, (\\), null, size,
     fromList, member, delete, difference, disjoint, insert, singleton, elemAt )
@@ -29,6 +26,8 @@ import Data.Tuple (swap)
 import System.Timeout (timeout)
 import Debug.Trace (trace)
 import Data.Time.Clock 
+import Data.ByteString.Builder (Builder, toLazyByteString)
+import Data.ByteString.Conversion (runBuilder, toByteString')
 
 andRs :: [(Form, Prf)] -> Form -> IO Prf
 andRs fps (And fs) = AndF' <$> mapM (\ f_ -> (f_,) <$> andRs fps f_) fs
@@ -99,7 +98,7 @@ pdne k f g
        let g' = substForm vxs g
        p <- pdne k' f' g'
        return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
-     _ -> et "prove-DNE"
+     _ -> error "prove-DNE"
 
 prn :: Int -> Form -> Form -> IO Prf
 prn k (Not f) (Not g) = do
@@ -143,9 +142,9 @@ prn k (Ex vs f) (Ex ws g) = do
   Cut' (Fa ws $ f'' <=> g) (FaF' ws k (f'' <=> g) p) <$> faIffToExIffEx'' k vs f ws g
 prn _ f g
   | f == g = return $ iffRefl f
-  | otherwise = et "prove-rename"
+  | otherwise = error"prove-rename"
 
-vmToVxs :: VM -> [Text] -> Maybe [(Text, Term)]
+vmToVxs :: VM -> [BS] -> Maybe [(BS, Term)]
 vmToVxs vm = mapM (\ v_ -> (v_,) <$> HM.lookup v_ vm)
 
 specs :: VM -> [(Term, Term)] -> Maybe VM
@@ -169,7 +168,7 @@ spec vm x y = do
   guard (x == y)
   return vm
 
-properMaps :: VM -> Text -> Bool
+properMaps :: VM -> BS -> Bool
 properMaps vm v = 
   case HM.lookup v vm of 
     Just x -> x /= Var v 
@@ -210,7 +209,7 @@ putt x y (Eq a b)
   | x == b && y == a = return $ EqS' y x
   | otherwise = mzero
 
-putt x y _ = et "putt : not an equation"
+putt x y _ = error"putt : not an equation"
 put :: [Form] -> Term -> Term -> IO Prf
 put es x@(Fun f xs) y@(Fun g ys)
   | x == y = return $ EqR' x
@@ -270,7 +269,7 @@ puf _ es (Eq a b) (Eq x y) = do
         (Cut' (x === a) (EqS' a x) $ eqTrans2 x a b y) 
         (Cut' (y === b) (EqS' b y) $ eqTrans2 a x y b)
 puf _ _ f g =
-  eb $ "prove-unfold\n f : " <> ppForm f <> "\ng : " <> ppForm g <> "\n"
+  error $ show $ "prove-unfold\n f : " <> ppForm f <> "\ng : " <> ppForm g <> "\n"
 
 pfl :: Int -> Form -> Form -> IO Prf
 pfl k (Not f) (Not g) = do
@@ -312,7 +311,7 @@ pfl k (Ex vs f) (Ex ws g) = do
   return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
 pfl _ f g
   | f == g = return $ iffRefl f
-  | otherwise = et "prove-flatten"
+  | otherwise = error"prove-flatten"
 
 pnm :: Int -> Form -> Form -> IO Prf
 pnm k (Not f) (Not g) = do
@@ -369,7 +368,7 @@ pnm k (Ex vs f) _g
     return $ cuts [(Ex vs f <=> f, bloatExIff k vs f), (f <=> _g, p)] $ iffTrans (Ex vs f) f _g
 pnm _ f g
   | f == g = return $ iffRefl f
-  | otherwise = eb $ "prove-normalized error\nf = " <> ppForm f <> "\ng = " <> ppForm g <> "\n"
+  | otherwise = error $ show $ "prove-normalized error\nf = " <> ppForm f <> "\ng = " <> ppForm g <> "\n"
 
 useConcs :: Int -> [Form] -> IO (Int, [Form], Prf -> Prf)
 useConcs k [] = return (k, [], id)
@@ -390,7 +389,7 @@ useConc k (Or fs) = do
 useConc k g =
   if isLit g
   then return (k, [g], id)
-  else eb $ "use conc : not lit : " <> ppForm g
+  else error $ show $ "use conc : not lit : " <> ppForm g
 
 expandLit :: Int -> Form -> Form -> IO (Int, [Form], Prf -> Prf)
 expandLit k (Not g) (Iff g' h)
@@ -474,7 +473,7 @@ utrw vm x y a b =
   ( do vm' <- ut vm x a
        ut vm' y b )
 
-ubv :: VM -> Text -> Term -> Maybe VM
+ubv :: VM -> BS -> Term -> Maybe VM
 -- scheme  : ubv vm v x
 -- assumes : v is unbound in vm
 -- assumes : if x is a variable, it is also unbound in vm
@@ -528,7 +527,7 @@ ua vm (Rel r xs) (Rel s ys) =
   else []
 ua vm _ _ = []
 
-gndVar :: VM -> Text -> VM
+gndVar :: VM -> BS -> VM
 gndVar vm v =
   case HM.lookup v vm of
     Just _ -> vm
@@ -560,8 +559,8 @@ mapPremLit hs f@(Not (Eq x y))
   | f `elem` hs = return $ Id' f
   | x == y = return $ NotT' (x === x) $ EqR' x
   | Not (Eq y x) `elem` hs = return $ NotT' (x === y) $ NotF' (y === x) $ EqS' y x
-  | otherwise = eb $ "use-prem-neq : " <> ppForm f
-mapPremLit _ f = eb $ "map-prem-lit-exception : " <> ppForm f <> "\n"
+  | otherwise = error $ show $ "use-prem-neq : " <> ppForm f
+mapPremLit _ f = error $ show $ "map-prem-lit-exception : " <> ppForm f <> "\n"
 
 efactor :: Maybe Bool -> Form -> Form -> IO Prf
 efactor mb f g = do
@@ -619,13 +618,8 @@ genRgtRss vm pd@(Just (pvt, Rev)) fs hs (g, gs) = L.map (, pd, fs, gs, hs) $ L.c
 
 cnfTrans :: Form -> Form -> IO Prf
 cnfTrans f g = do
-  -- pt "CNF-Trans :\n"
-  -- pt $ "f : " <> ppForm f <> "\n"
-  -- pt $ "g : " <> ppForm g <> "\n"
   (_, gs, pp) <- useConc 0 g
-  -- pt $ "gs : " <> ppList ppForm gs <> "\n"
   vm <- cast $ searchCnf gs (HM.empty, [f])
-  -- pt $ "vm :\n" <> ppVM vm <> "\n"
   pf <- proveCnfTrans vm f gs
   return $ pp pf
 
@@ -678,9 +672,9 @@ nubIndexForm (Fa vs f) = maximum $ nubIndexForm f : L.map nubIndexVar vs
 nubIndexForm (Ex vs f) = maximum $ nubIndexForm f : L.map nubIndexVar vs
 nubIndexForm _ = 0
 
-nubIndexVar :: Text -> Int
+nubIndexVar :: BS -> Int
 nubIndexVar ('X' :> t) = 
-  case readInt t of  
+  case bs2int t of  
     Just k -> k + 1
     _ -> 0
 nubIndexVar _ = 0
@@ -737,18 +731,10 @@ eqfactor f g = do
 
 superpose :: Form -> Form -> Form -> IO Prf
 superpose f g h = do
-  -- pt $ "f : " <> ppForm f <> "\n"
-  -- pt $ "g : " <> ppForm g <> "\n"
-  -- pt $ "h : " <> ppForm h <> "\n"
   let [f', g'] = nubForms [f, g]
-  -- pt $ "f' : " <> ppForm f' <> "\n"
-  -- pt $ "g' : " <> ppForm g' <> "\n"
   fls <- cast $ premLits f'
   gls <- cast $ premLits g'
   (_, hls, ph) <- useConc 0 h
-  -- pt $ "f-lits :\n" <> ppListNl ppForm fls <> "\n"
-  -- pt $ "g-lits :\n" <> ppListNl ppForm gls <> "\n"
-  -- pt $ "h-lits :\n" <> ppListNl ppForm hls <> "\n"
   let zos = genZs Obv fls gls hls
   let zrs = genZs Rev gls fls hls
   let zs = zos ++ zrs
@@ -1014,7 +1000,7 @@ candidate vc f g =
   let ws = S.toList (formVars g) in
   L.all (candVar vc ws) vs
 
-candVar :: VC -> [Text] -> Text -> Bool
+candVar :: VC -> [BS] -> BS -> Bool
 candVar (vw, _) ws v = 
   case HM.lookup v vw of 
     Just s -> overlaps (S.toList s) ws 
@@ -1075,12 +1061,12 @@ origFork False vc (And fs, And gs)
     L.map (\ (f_, fs_, g_, gs_) -> (vc, [(f_, g_), (And fs_, And gs_)])) l
 origFork md vc _ = []
 
-pickPair :: (Text, Set Text) -> Maybe (Text, Text)
+pickPair :: (BS, Set BS) -> Maybe (BS, BS)
 pickPair (v, ws) = do 
   guard $ 1 < S.size ws 
   return (v, S.elemAt 0 ws)
 
-unconstPair :: VC -> Maybe (Text, Text)
+unconstPair :: VC -> Maybe (BS, BS)
 unconstPair (vw, _) = first pickPair $ HM.toList vw
 
 pruneVC :: VC -> VC
@@ -1094,7 +1080,7 @@ pruneVC vc =
 
 
 
-vcToVrAux :: HM.Map Text (Set Text) -> HM.Map Text Text
+vcToVrAux :: HM.Map BS (Set BS) -> HM.Map BS BS
 vcToVrAux vws = do
   let vwss = HM.toList vws
   HM.fromList $ MB.mapMaybe (\ (v_, ws_) -> (v_,) <$> breakSingleton (S.toList ws_)) vwss
@@ -1113,7 +1099,7 @@ rnt :: MTT -> Term -> Term
 rnt mp (Var v) = 
   case HM.lookup v mp of
     Just w -> Var w
-    _ -> et "unbound variable detected\n"
+    _ -> error "unbound variable detected\n"
 rnt mp (Fun f xs) = Fun f $ L.map (rnt mp) xs
 
 rnfs :: MTT -> Int -> [Form] -> ([Form], Int)
@@ -1145,15 +1131,15 @@ rnf tt ti (Ex vs f) =
   let (f', ti'') = rnf tt' ti' f in
   (Ex vs' f', ti'')
 
-rnvs :: MTT -> Int -> [Text] -> ([Text], MTT, Int)
+rnvs :: MTT -> Int -> [BS] -> ([BS], MTT, Int)
 rnvs mp k [] = ([], mp, k)
 rnvs mp k (v : vs) =
-  let v' = "X" <> tlt (ppInt k) in
+  let v' = "X" <> toByteString' (ppInt k) in
   let mp' = HM.insert v v' mp in
   let (vs', mp'', k') = rnvs mp' (k + 1) vs in
   (v' : vs', mp'', k')
 
-conAux :: Text -> Set Text -> VC -> Maybe VC
+conAux :: BS -> Set BS -> VC -> Maybe VC
 conAux v nws (vws, wvs) = do
   ws <- HM.lookup v vws
   let wsi = S.intersection ws nws
@@ -1163,13 +1149,13 @@ conAux v nws (vws, wvs) = do
   let wvs' = HM.mapWithKey (conAuxAux v wso) wvs
   return (vws', wvs')
 
-conVars :: [Text] -> [Text] -> VC -> Maybe VC
+conVars :: [BS] -> [BS] -> VC -> Maybe VC
 conVars vs ws vc = do
   (vws, wvs) <- foldM (\ vc_ v_ -> conAux v_ (S.fromList ws) vc_) vc vs
   (wvs', vws') <- foldM (\ vc_ w_ -> conAux w_ (S.fromList vs) vc_) (wvs, vws) ws
   return (vws', wvs')
 
-conVar :: Text -> Text -> VC -> Maybe VC
+conVar :: BS -> BS -> VC -> Maybe VC
 conVar v w = conVars [v] [w]
 conTerms :: VC -> [Term] -> [Term] -> Maybe VC
 conTerms vm [] [] = return vm
@@ -1202,9 +1188,9 @@ orig f g
       Just vc -> 
         do let vr = vcToVr $ pruneVC vc
            p <- porg' vr 0 f' g' <|> error "porg-failure"
-           verify 0 S.empty (S.singleton (f' <=> g')) p 
+           -- verify 0 S.empty (S.singleton (f' <=> g')) p 
            return $ Cut' (f <=> g) (pf p) $ iffMP f g
-      _ -> pt "Orig timeout!\n" >> return Open'
+      _ -> ps "Orig timeout!\n" >> return Open'
 
 -- failAsm :: Int -> IO Prf -> IO Prf
 -- failAsm k pf = do
@@ -1213,7 +1199,7 @@ orig f g
 --     Just p -> return p 
 --     _ -> return Open' 
 
-constraint :: Set Text -> Set Text -> Map Text (Set Text)
+constraint :: Set BS -> Set BS -> Map BS (Set BS)
 constraint vs ws = L.foldl (\ m_ v_ -> HM.insert v_ ws m_) HM.empty (S.toList vs)
 
 makeVC :: Form -> Form -> IO VC
@@ -1221,21 +1207,6 @@ makeVC f g = do
   let vs = formVars f
   let ws = formVars g
   return (constraint vs ws, constraint ws vs)
-
--- makeVC :: Form -> Form -> IO VC
--- makeVC f g = do
---   let vs = formVars f
---   let ws = formVars g
---   let fsgs = formSigs HM.empty [] f
---   let gsgs = formSigs HM.empty [] g
---   let fm = groupByTextKey fsgs
---   let gm = groupByTextKey gsgs
---   pb $ "f : " <> ppForm f <> "\n"
---   pb $ "g : " <> ppForm g <> "\n"
---   let vswss = mergeBySigs fm gm
---   -- pt $ ppListNl (\ (vs_, ws_) -> ppList id vs_ <> " <-|-> " <> ppList id ws_) vswss 
---   -- et "todo"
---   foldM (\ vc_ (vs_, ws_) -> cast (conVars vs_ ws_ vc_)) (initVC vs ws) vswss
 
 formSigs :: Sigs -> [PrePath] -> Form -> Sigs
 formSigs sg pts (Eq x y) = do
@@ -1274,8 +1245,8 @@ markNonOcc PreIffR = NewIffR
 markNonOcc PreEq = NewEq
 markNonOcc PreNot = NewNot
 
-markFstOcc :: Text -> [PrePath] -> [Path]
-markFstOcc _ [] = et "unbound var"
+markFstOcc :: BS -> [PrePath] -> [Path]
+markFstOcc _ [] = error "unbound var"
 markFstOcc v (PreFa vs : pts) =
   if v `elem` vs
   then NewFa True  : L.map markNonOcc pts
@@ -1294,24 +1265,24 @@ termSigs sg pts (Var v) =
     Just mp ->
       let mp' = HM.alter succMaybe npts mp in
       HM.insert v mp' sg
-    _ -> et $ "Signature does not include var : " <> v
+    _ -> error $ show $ "Signature does not include var : " <> v
 termSigs sg pts (Fun f xs) =
   let ptxs = extendPrePathsFun pts f 0 xs in
   L.foldl (uncurry . termSigs) sg ptxs
 --termSigs sg _ (Par _) = sg
 
-insertBySig :: Text -> Maybe [Text] -> Maybe [Text]
+insertBySig :: BS -> Maybe [BS] -> Maybe [BS]
 insertBySig v (Just vs) = Just (v : vs)
 insertBySig v _ = Just [v]
 
-groupByTextKey :: (Ord a) => HM.Map Text a -> HM.Map a [Text]
-groupByTextKey = HM.foldrWithKey (HM.alter . insertBySig) HM.empty
+groupByBSKey :: (Ord a) => HM.Map BS a -> HM.Map a [BS]
+groupByBSKey = HM.foldrWithKey (HM.alter . insertBySig) HM.empty
 
 succMaybe :: Maybe Int -> Maybe Int
 succMaybe (Just k) = Just (k + 1)
 succMaybe _ = Just 1
 
-mergeBySigs :: Map Sig [Text] -> Map Sig [Text] -> [([Text], [Text])]
+mergeBySigs :: Map Sig [BS] -> Map Sig [BS] -> [([BS], [BS])]
 mergeBySigs fm gm =
   HM.foldrWithKey
     (\ sg_ vs_ ->
@@ -1319,19 +1290,19 @@ mergeBySigs fm gm =
         Just ws ->
           if L.length vs_ == L.length ws
           then ((vs_, ws) :)
-          else et "Cannot merge sigs : 0"
-        _ -> eb ("Signature present in only one map,\nVS : " <> ppList ft vs_ <> "\nSig : " <> ppSig sg_ <> "\nOther Sigs :\n" <> ppHM ppSig (ppList ft) gm) )
+          else error "Cannot merge sigs : 0"
+        _ -> error $ show ("Signature present in only one map,\nVS : " <> ppList ft vs_ <> "\nSig : " <> ppSig sg_ <> "\nOther Sigs :\n" <> ppHM ppSig (ppList ft) gm) )
     [] fm
 
 uniqVars :: [Form] -> Bool
 uniqVars fs = isJust $ foldM uniqVarsCore S.empty fs
 
-uniqVarsAux :: Set Text -> Text -> Maybe (Set Text)
+uniqVarsAux :: Set BS -> BS -> Maybe (Set BS)
 uniqVarsAux vs v 
   | S.member v vs = nt
   | otherwise = return $ S.insert v vs
 
-uniqVarsCore :: Set Text -> Form -> Maybe (Set Text)
+uniqVarsCore :: Set BS -> Form -> Maybe (Set BS)
 uniqVarsCore vs (Not f) = uniqVarsCore vs f
 uniqVarsCore vs (Or fs) = foldM uniqVarsCore vs fs
 uniqVarsCore vs (And fs) = foldM uniqVarsCore vs fs
@@ -1396,16 +1367,16 @@ origPrep f g = do
   -- (g'', pf3) <- dneConcPrep f''' g'
   return (f2, g2, pf0 . pf1 . pf2)
 
-conAuxAux :: Text -> Set Text -> Text -> Set Text -> Set Text
+conAuxAux :: BS -> Set BS -> BS -> Set BS -> Set BS
 conAuxAux v wso w vs =
   if S.member w wso
   then S.delete v vs
   else vs
 
-varSigs :: Sigs -> Text -> Sigs
+varSigs :: Sigs -> BS -> Sigs
 varSigs sg v =
   case HM.lookup v sg of
-    Just _ -> et "var-new-sigs"
+    Just _ -> error "var-new-sigs"
     _ -> HM.insert v HM.empty sg
 
 extendPrePathsRel :: [PrePath] -> Funct -> Int -> [Term] -> [([PrePath], Term)]
@@ -1617,7 +1588,7 @@ useAndVR k vm ffs (g : gs) = do
   return $ (g, p) : gps
 useAndVR _ _ (_ : _) [] = mzero
 
-addVM :: Text -> Term -> VM -> Maybe VM
+addVM :: BS -> Term -> VM -> Maybe VM
 addVM v x gm =
   case HM.lookup v gm of
     Just y ->
@@ -1626,7 +1597,7 @@ addVM v x gm =
       else nt
     _ -> return $ HM.insert v x gm
 
-initVC :: Set Text -> Set Text -> VC
+initVC :: Set BS -> Set BS -> VC
 initVC vs ws =
   let lvs = S.toList vs in
   let lws = S.toList ws in
@@ -1647,7 +1618,7 @@ df1rw (Iff l r : es) g =
   if g == l
   then return (l <=> r, r)
   else df1rw es g
-df1rw (e : es) f = eb $ "non-definition : " <> ppForm e
+df1rw (e : es) f = error $ show $ "non-definition : " <> ppForm e
 
 dfj :: [Form] -> [Form] -> IO (Form, [Form])
 dfj es (f : fs) = (DBF.second (: fs) <$> df1 es f) <|> (DBF.second (f :) <$> dfj es fs)
@@ -1693,7 +1664,7 @@ dutt x (Obv, Eq a b)
 dutt x (Rev, Eq a b)
   | x == b = return a
   | otherwise = nt
-dutt _ (dr, f) = eb $ "non-equation : " <> ppForm f <> "\n"
+dutt _ (dr, f) = error $ show $ "non-equation : " <> ppForm f <> "\n"
 
 du :: [(Dir, Form)] -> Term -> Term -> IO USOL
 du es x y = do
@@ -1744,12 +1715,12 @@ obvEq :: Set Funct -> Form -> (Dir, Form)
 obvEq dfs f@(Fa vs (Eq a b))
   | headFix dfs a && disjoint dfs (tfuns b) = (Obv, f)
   | headFix dfs b && disjoint dfs (tfuns a) = (Rev, f)
-  | otherwise = et "obv-eq : cannot fix direction"
+  | otherwise = error "obv-eq : cannot fix direction"
 obvEq dfs f@(Eq a b)
   | headFix dfs a && disjoint dfs (tfuns b) = (Obv, f)
   | headFix dfs b && disjoint dfs (tfuns a) = (Rev, f)
-  | otherwise = et "obv-eq : cannot fix direction"
-obvEq dfs _ = et "obv-eq : non-equation"
+  | otherwise = error "obv-eq : cannot fix direction"
+obvEq dfs _ = error "obv-eq : non-equation"
 
 dunfold :: [Form] -> Form -> Form -> IO Prf
 dunfold es f h = do
@@ -1935,7 +1906,7 @@ uutr (Fun f xs) e (Fun g ys) = do
   guard $ f == g
   xyps <- mapM2 (\ x_ y_ -> (x_ === y_,) <$> uut x_ e y_) xs ys
   return $ cuts xyps $ FunC' f xs ys
-uutr _ _ _ = et "uutr cannot recurse"
+uutr _ _ _ = error "uutr cannot recurse"
 
 uutt :: Term -> Form -> Term -> IO Prf
 uutt x (Eq a b) y =
@@ -1952,7 +1923,7 @@ uutt x (Fa vs (Eq a b)) y =
       vxs <- mapM (\ v_ -> (v_ ,) <$> cast (HM.lookup v_ vm)) vs
       return $ FaT' vxs (a === b) $ EqS' y x
     _ -> mzero
-uutt _ f _ = et "not an equation"
+uutt _ f _ = error "not an equation"
 
 uuf :: Int -> Form -> Form -> Form -> IO Prf
 uuf k (Rel r xs) e (Rel s ys) = do
@@ -1969,9 +1940,9 @@ uuf k (Fa vs f) e (Fa ws g) = do
 uuf k (Not f) e (Not g) = do
   p <- uuf k f e g
   return $ Cut' (f <=> g) p $ iffToNotIffNot f g
-uuf _ f _ g = eb $ "uuf unimplmented case,\nf : " <> ppForm f <> "\ng : " <> ppForm g <> "\n"
+uuf _ f _ g = error $ show $ "uuf unimplmented case,\nf : " <> ppForm f <> "\ng : " <> ppForm g <> "\n"
 
-vxsToVm :: [(Text, Term)] -> VM
+vxsToVm :: [(BS, Term)] -> VM
 vxsToVm = L.foldl (\ vm_ (v_, x_) -> HM.insert v_ x_ vm_) HM.empty
 
 uegr :: Int -> VM -> Form -> Form -> Form -> IO Prf
@@ -2013,7 +1984,7 @@ uegr k gm (Ex vs f) e (Ex ws g) = do
   p <- ueg k' gm' f' e g'
   return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
 uegr _ _ f e g =
-  eb $ "UEGR failed:\n f : " <> ppForm f <> "\ne : " <> ppForm e <> "\ng : " <> ppForm g <> "\n"
+  error $ show $ "UEGR failed:\n f : " <> ppForm f <> "\ne : " <> ppForm e <> "\ng : " <> ppForm g <> "\n"
 
 uegt :: VM -> Form -> Form -> Form -> IO Prf
 uegt gm f (Iff l r) g = do
@@ -2027,7 +1998,7 @@ uegt gm f (Fa vs (Iff l r)) g = do
   guard $ l' == f
   guard $ r' == g
   return $ FaT' vxs (l <=> r) $ Id' (f <=> g)
-uegt _ _ e _ = eb $ "Not a definition : " <> ppForm e
+uegt _ _ e _ = error $ show $ "Not a definition : " <> ppForm e
 
 revDir :: Dir -> Dir
 revDir Obv = Rev
@@ -2077,7 +2048,7 @@ avatarComp f@(Iff l r) g =
   avatarCompCore f g <|>
   ( do p <- avatarCompCore (Iff r l) g
        return $ Cut' (r <=> l) (iffSym l r) p )
-avatarComp _ _ = et "avatar-comp : not iff"
+avatarComp _ _ = error "avatar-comp : not iff"
 
 avatarCompCore :: Form -> Form -> IO Prf -- Ctx
 avatarCompCore (Iff s f) g = do
@@ -2088,9 +2059,9 @@ avatarCompCore (Iff s f) g = do
   vm <- mapSearch HM.empty fs gs
   pf <- usePrem (mapPremLit gs) vm f
   return $ pp $ NotF' s $ Cut' f (iffMP s f) pf
-avatarCompCore _ _ = et "avatar-comp-core : not iff"
+avatarCompCore _ _ = error "avatar-comp-core : not iff"
 
-aoct :: [Term] -> [Text] -> VM -> Term -> Term -> IO VM
+aoct :: [Term] -> [BS] -> VM -> Term -> Term -> IO VM
 aoct zs ws vm (Var v) y@(Fun f xs) =
   case HM.lookup v vm of
     Just x -> guard (x == y) >> return vm
@@ -2103,7 +2074,7 @@ aoct zs ws vm x y
   | x == y = return vm
   | otherwise = mzero
 
-aocf :: [Term] -> [Text] -> VM -> Form -> Form -> IO VM
+aocf :: [Term] -> [BS] -> VM -> Form -> Form -> IO VM
 aocf zs ws vm (Eq x y) (Eq z w) =
   foldM2 (aoct zs ws) vm [x, y] [z, w] <|> foldM2 (aoct zs ws) vm [x, y] [w, z]
 aocf zs ws vm (Rel r xs) (Rel s ys) = do
@@ -2118,7 +2089,7 @@ aocf zs us vm (Fa vs f) (Fa ws g) = do
 aocf zs us vm (Ex vs f) (Ex ws g) = do
   guard $ isPerm vs ws
   aocf zs (ws L.\\ vs) vm f g
-aocf zs ws vm f g = et "aocf : todo"
+aocf zs ws vm f g = error "aocf : todo"
 
 normalizeAoC :: Form -> IO ([Term], Form)
 normalizeAoC (Fa vs (Imp (Ex ws f) g)) = do
@@ -2132,18 +2103,6 @@ normalizeAoC (Imp (Ex ws f) g) = do
   return (xs, Imp (Ex ws f) (subf vm f))
 normalizeAoC _ = mzero
 
---mkRelD :: Text -> Form -> Maybe Form
---mkRelD r (Fa vs g) = do
---  f <- mkRelD r g
---  return (Fa vs f)
---mkRelD r (Iff (Rel s xs) f) = guard (r == s) >> return (Iff (Rel s xs) f)
---mkRelD r (Iff f (Rel s xs)) = guard (r == s) >> return (Iff (Rel s xs) f)
---mkRelD r (Or [f, Not (Rel s xs)]) = guard (r == s) >> return (Iff (Rel s xs) f)
---mkRelD r (Or fs) = do
---  (fs', Not (Rel s xs)) <- desnoc fs
---  guard (r == s)
---  return (Iff (Rel s xs) (Or fs'))
---mkRelD _ f = eb $ "Cannot make rdef :\n" <> ppFormNl f
 mkRelD :: Form -> Maybe Form
 mkRelD (Fa vs g) = do
   f <- mkRelD g
@@ -2154,7 +2113,7 @@ mkRelD (Or [f, Not (Rel s xs)]) = return (Iff (Rel s xs) f)
 mkRelD (Or fs) = do
   (fs', Not (Rel s xs)) <- desnoc fs
   return (Iff (Rel s xs) (Or fs'))
-mkRelD f = eb $ "Cannot make rdef :\n" <> ppFormNl f
+mkRelD f = error $ show $ "Cannot make rdef :\n" <> ppFormNl f
 
 proveRelD' :: Form -> Form -> IO Prf
 proveRelD' (Fa vs f) (Fa ws g) = do
@@ -2176,9 +2135,9 @@ proveRelD'' (Iff r (Or fs)) (Or fsnr)  = do
   (fs', Not r') <- cast $ desnoc fsnr
   guard (r == r' && fs == fs')
   return $ rDefLemma1 r fs fsnr
-proveRelD'' f g = eb $ "Anomaly! : " <> ppForm f <> " |- " <> ppForm g <> "\n"
+proveRelD'' f g = error $ show $ "Anomaly! : " <> ppForm f <> " |- " <> ppForm g <> "\n"
 
-relDef :: Text -> Form -> IO Stelab
+relDef :: BS -> Form -> IO Stelab
 relDef n g = do
   f <- cast $ mkRelD g
   p <- proveRelD' f g
@@ -2240,7 +2199,7 @@ pqm k (Ex vs f) (Ex ws g) = do
   return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
 pqm _ f g
   | f == g = return $ iffRefl f
-  | otherwise = et "prove-quant-merge"
+  | otherwise = error "prove-quant-merge"
 
 flattening :: Form -> Form -> IO Prf
 flattening f g = do
@@ -2252,27 +2211,27 @@ flattening f g = do
   p2 <- pqm 0 f'' g
   return $ cutIff f g (iffsTrans [(f, p0), (f', p1), (f'', p2)] g) $ Id' g
 
-exSimp :: Int -> [Text] -> Form -> Form -> IO Prf
+exSimp :: Int -> [BS] -> Form -> Form -> IO Prf
 exSimp k vs (And []) (And []) = return $ exTopIff vs
 exSimp k vs (Or []) (Or []) = return $ exBotIff k vs
 exSimp k vs f (Ex ws g) = do 
   guardMsg "ex-simp" $ vs == ws && f == g
   return $ iffRefl (Ex vs f)
-exSimp _ _ _ _ = et "ex-simp"
+exSimp _ _ _ _ = error "ex-simp"
 
-faSimp :: Int -> [Text] -> Form -> Form -> IO Prf
+faSimp :: Int -> [BS] -> Form -> Form -> IO Prf
 faSimp k vs (And []) (And []) = return $ faTopIff k vs
 faSimp k vs (Or []) (Or []) = return $ faBotIff vs
 faSimp k vs f (Fa ws g) = do 
   guardMsg "ex-simp" $ vs == ws && f == g
   return $ iffRefl (Fa vs f)
-faSimp _ _ _ _ = et "fa-simp"
+faSimp _ _ _ _ = error "fa-simp"
 
 notSimp :: Form -> Form -> IO Prf
 notSimp (And []) (Or []) = return $ iffRFull (Not top) bot (NotT' top $ AndF' []) (OrT' []) 
 notSimp (Or []) (And []) = return $ iffRFull (Not bot) top (AndF' []) (NotF' bot $ OrT' []) 
 notSimp f (Not g) = guard (f == g) >> return (iffRefl (Not f))
-notSimp _ _ = et "not-simp"
+notSimp _ _ = error "not-simp"
 
 iffSimp :: Form -> Form -> Form -> IO Prf
 iffSimp f (And []) g = do
@@ -2305,7 +2264,7 @@ iffSimp f g (Iff f' g') = do
   guardMsg "iff-simp" $ g == g'
   return $ iffRefl (f <=> g)
 iffSimp f g h = 
-  eb $ 
+  error $ show $ 
     "iff-simp\n" <> 
     "f : " <> ppForm f <> "\n" <>
     "g : " <> ppForm g <> "\n" <>
@@ -2339,98 +2298,80 @@ impSimp f g (Imp f' g') = do
   guardMsg "imp-simp" $ g == g'
   return $ iffRefl (f ==> g)
 impSimp f g h = 
-  eb $ 
+  error $ show $ 
     "imp-simp\n" <> 
     "f : " <> ppForm f <> "\n" <>
     "g : " <> ppForm g <> "\n" <>
     "h : " <> ppForm h <> "\n"
 
-pbs :: Int -> Form -> Form -> IO Prf
-pbs k (Not f) h = do
+provebs :: Int -> Form -> Form -> IO Prf
+provebs k (Not f) h = do
   let g = boolSimp f 
-  pfg <- pbs k f g
+  pfg <- provebs k f g
   pgh <- notSimp g h
   return $ iffsTrans [(Not f, Cut' (f <=> g) pfg $ iffToNotIffNot f g), (Not g, pgh)] h
-pbs k (Or fs) (And []) = do
+provebs k (Or fs) (And []) = do
   let gs = L.map boolSimp fs 
   guardMsg "top not found" $ top `elem` gs
-  fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> pbs k f_ g_) fs gs
+  fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> provebs k f_ g_) fs gs
   pfg <- cuts fgps <$> cast (iffsToOrIffOr fs gs)
   return $ iffsTrans [(Or fs, pfg), (Or gs, degenOrIff gs)] top
-pbs k (And fs) (Or []) = do
+provebs k (And fs) (Or []) = do
   let gs = L.map boolSimp fs 
   guardMsg "bot not found" $ bot `elem` gs
-  fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> pbs k f_ g_) fs gs
+  fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> provebs k f_ g_) fs gs
   pfg <- cuts fgps <$> cast (iffsToAndIffAnd fs gs)
   return $ iffsTrans [(And fs, pfg), (And gs, degenAndIff gs)] bot
--- pbs k (Or fs) h = do
---   let gs = L.map boolSimp fs 
---   let gs' = L.filter (not . isBot) gs 
---   fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> pbs k f_ g_) fs gs
---   pfg <- cuts fgps <$> cast (iffsToOrIffOr fs gs)
---   case (gs', h) of 
---     ([g], _) -> return $ iffsTrans [(Or fs, pfg), (Or gs, bloatOrIff' gs g)] h
---     (_, Or hs) -> return $ iffsTrans [(Or fs, pfg), (Or gs, bloatOrIff gs)] (Or hs)
---     _ -> et "pbs-or"
--- pbs k (And fs) h = do
---   let gs = L.map boolSimp fs 
---   let gs' = L.filter (not . isTop) gs 
---   fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> pbs k f_ g_) fs gs
---   pfg <- cuts fgps <$> cast (iffsToAndIffAnd fs gs)
---   case (gs', h) of 
---     ([g], _) -> return $ iffsTrans [(And fs, pfg), (And gs, bloatAndIff' gs g)] h
---     (_, And hs) -> return $ iffsTrans [(And fs, pfg), (And gs, bloatAndIff gs)] (And hs)
---     _ -> et "pbs-and"
-pbs k (Or fs) (Or hs) = do
+provebs k (Or fs) (Or hs) = do
   let gs = L.map boolSimp fs 
   guardMsg "top filter mismatch" $ L.filter (not . isBot) gs == hs
-  fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> pbs k f_ g_) fs gs
+  fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> provebs k f_ g_) fs gs
   pfg <- cuts fgps <$> cast (iffsToOrIffOr fs gs)
   return $ iffsTrans [(Or fs, pfg), (Or gs, bloatOrIff gs)] (Or hs)
-pbs k (And fs) (And hs) = do
+provebs k (And fs) (And hs) = do
   let gs = L.map boolSimp fs 
   guardMsg "top filter mismatch" $ L.filter (not . isTop) gs == hs
-  fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> pbs k f_ g_) fs gs
+  fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> provebs k f_ g_) fs gs
   pfg <- cuts fgps <$> cast (iffsToAndIffAnd fs gs)
   return $ iffsTrans [(And fs, pfg), (And gs, bloatAndIff gs)] (And hs)
-pbs k (Imp f g) h = do
+provebs k (Imp f g) h = do
   let f' = boolSimp f
   let g' = boolSimp g
-  pf <- pbs k f f' -- pl : |- fl <=> gl 
-  pg <- pbs k g g' -- pl : |- fr <=> gr
+  pf <- provebs k f f' -- pl : |- fl <=> gl 
+  pg <- provebs k g g' -- pl : |- fr <=> gr
   let pn = Cut' (f <=> f') pf $ Cut' (g <=> g') pg $ impCong f g f' g'
   ph <- impSimp f' g' h
   return $ iffsTrans [(Imp f g, pn), (Imp f' g', ph)] h
 
-pbs k (Iff f g) h = do
+provebs k (Iff f g) h = do
   let f' = boolSimp f
   let g' = boolSimp g
-  pf <- pbs k f f' -- pl : |- fl <=> gl 
-  pg <- pbs k g g' -- pl : |- fr <=> gr
+  pf <- provebs k f f' -- pl : |- fl <=> gl 
+  pg <- provebs k g g' -- pl : |- fr <=> gr
   let pn = Cut' (f <=> f') pf $ Cut' (g <=> g') pg $ iffCong f g f' g'
   ph <- iffSimp f' g' h
   return $ iffsTrans [(Iff f g, pn), (Iff f' g', ph)] h
-pbs k (Fa vs f) h = do
+provebs k (Fa vs f) h = do
   let g = boolSimp f
   let (k', vxs) = varPars k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
-  pfg <- pbs k' f' g'
+  pfg <- provebs k' f' g'
   let pfg' = Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) pfg) (faIffToFaIffFa vs k f g)
   pgh <- faSimp k vs g h
   return $ iffsTrans [(Fa vs f, pfg'), (Fa vs g, pgh)] h
-pbs k (Ex vs f) h = do
+provebs k (Ex vs f) h = do
   let g = boolSimp f
   let (k', vxs) = varPars k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
-  pfg <- pbs k' f' g'
+  pfg <- provebs k' f' g'
   let pfg' = Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) pfg) (faIffToExIffEx vs k f g)
   pgh <- exSimp k vs g h
   return $ iffsTrans [(Ex vs f, pfg'), (Ex vs g, pgh)] h
-pbs _ f g
+provebs _ f g
   | f == g = return $ iffRefl f
-  | otherwise = eb $ "prove-bool-simp\nf : " <> ppForm f <> "\ng : " <> ppForm g <> "\n"
+  | otherwise = error $ show $ "prove-bool-simp\nf : " <> ppForm f <> "\ng : " <> ppForm g <> "\n"
 
 removePure :: Form -> Form -> IO Prf
 removePure f g = do
@@ -2440,9 +2381,9 @@ removePure f g = do
   let f3 = uws f2
   let f4 = fltn f3
   let f5 = qmerge f4
-  guardMsg (tlt $ "PPR mismatch\nf' : " <> ppForm f5 <> "\ng :  " <> ppForm g <> "\n") (f5 == g)
+  guardMsg (show $ "PPR mismatch\nf' : " <> ppForm f5 <> "\ng :  " <> ppForm g <> "\n") (f5 == g)
   p1 <- ppp 0 f f1
-  p2 <- pbs 0 f1 f2
+  p2 <- provebs 0 f1 f2
   p3 <- puw 0 f2 f3
   p4 <- pfl 0 f3 f4
   p5 <- pqm 0 f4 f5
@@ -2489,7 +2430,7 @@ puw k (Ex vs f) (Ex ws g) = do
   return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
 puw _ f g
   | f == g = return $ iffRefl f
-  | otherwise = et "prove-DNE"
+  | otherwise = error "prove-DNE"
 
 skolemize :: [Form] -> Int -> Form -> Form -> IO Prf
 skolemize fs k f g 
@@ -2528,7 +2469,7 @@ skol ds k (Or fs) (Or gs) = do
   fps <- mapM2 (\ f_ g_ -> (f_,) <$> skolemize ds k f_ g_) fs gs
   return $ OrF' gs gs $ OrT' fps
 skol fs k f g = do
-  eb $ "skol\n" <>
+  error $ show $ "skol\n" <>
        "fs :\n" <>
        ppListNl ppForm fs <> "\n" <>
        "f : " <> ppForm f <> "\n" <>
@@ -2545,8 +2486,8 @@ updr k (Fa vs f) (Fa ws g) = do
 updr k (Iff e f) (Imp g h) 
   | e == g && f == h = return $ IffTO' e f $ Id' (e ==> f)  
   | e == h && f == g = return $ IffTR' e f $ Id' (f ==> e)
-  | otherwise = et "not an iff component"
-updr k f g = eb $
+  | otherwise = error "not an iff component"
+updr k f g = error $ show $
   "UPDR\n" <>
   "f : " <> ppForm f <> "\n" <>
   "g : " <> ppForm g <> "\n" 
@@ -2561,7 +2502,7 @@ trueFalseElim f g = do
   let f' = boolSimp f
   let f'' = uws f'
   guard $ f'' == g
-  p0 <- pbs 0 f f'
+  p0 <- provebs 0 f f'
   p1 <- puw 0 f' f''
   return $ cutIff f f' p0 $ cutIff f' f'' p1 $ Id' g
 
@@ -2677,4 +2618,4 @@ pnnf _ _ f@(Rel _ _) g
   | f == g = return $ iffRefl f
 pnnf _ _ f@(Eq _ _) g
   | f == g = return $ iffRefl f
-pnnf _ _ f g = eb $ "prove-nnf\nf : " <> ppForm f <> "\ng : " <> ppForm g <> "\n"
+pnnf _ _ f g = error $ show $ "prove-nnf\nf : " <> ppForm f <> "\ng : " <> ppForm g <> "\n"
