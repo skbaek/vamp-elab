@@ -204,7 +204,7 @@ usedef (Fa vs f) (Fa ws g) = do
   return $ FaF' ws 0 g $ FaT' vxs f p
 usedef f g = usedef' f g 
 
-elabStep :: TPTP -> Step -> IO Stelab
+elabStep :: Prob -> Step -> IO Stelab
 elabStep s (n, "file", [m], g) = do
   f <- cast (HM.lookup m s)
   p <- orig f g
@@ -224,12 +224,12 @@ elabStep s (n, r, ns, g) = do
   p <- infer r fs g
   return $ InfStep g p n
 
-stelabIO :: Bool -> TPTP -> Step -> IO (TPTP, Stelab) -- todo : eliminate checking during Stelab-IO
+stelabIO :: Bool -> Prob -> Step -> IO (Prob, Stelab) -- todo : eliminate checking during Stelab-IO
 stelabIO vb tptp af@(n, _, _, f) = do
   when vb $ print $ "Elaborating step = " <> n
   (HM.insert n f tptp,) <$> elabStep tptp af
 
-stepsToStelabs :: Bool -> TPTP -> [Step] -> IO [Stelab]
+stepsToStelabs :: Bool -> Prob -> [Step] -> IO [Stelab]
 stepsToStelabs vb tptp stps = snd <$> mapAccumM (stelabIO vb) tptp stps
 
 desingle :: Stelab -> Stelab
@@ -398,14 +398,14 @@ stitch sftn ni (InfStep g prf cmt : slbs) = do
   let loc = (cmt, [], 0)
   proofL <- deliteral' sftn loc (False, g) prf
   proofR <- stitch (HM.insert (True, g) cmt sftn) (cmt, True, g) slbs
-  return $ Cut_ ni proofL proofR
+  return $ Cut_ ni g proofL proofR
 stitch sftn ni (DefStep f g p cmt : slbs) = do 
   let loc = (cmt, [], 0)
   let loc' = extLoc loc 0
   let sftn' = HM.insert (True, f) (toByteString' $ ppLoc loc) sftn
   pf <- deliteral' sftn' loc' (False, g) p
   pt <- stitch (HM.insert (True, g) cmt sftn') (cmt, True, g) slbs
-  return $ RelD_ ni $ Cut_ (toByteString' (ppLoc loc), True, f) pf pt
+  return $ RelD_ ni f $ Cut_ (toByteString' (ppLoc loc), True, f) g pf pt
 
 stitch sftn ni (AoCStep xs f g prf_g cmt : slbs) = do 
   (vs, fa) <- breakAoC f
@@ -421,13 +421,19 @@ stitch sftn ni (AoCStep xs f g prf_g cmt : slbs) = do
   pg <- deliteral' sftn_f locg (False, g) prf_g
   let sftn_fg = HM.insert (True, g) nmg sftn_f
   pt <- stitch sftn_fg (cmt, True, g) slbs
-  return $ stitchAoCs ni nxfs pf (Cut_ (nmf, True, f) pg pt)
+  return $ stitchAoCs ni nxfs pf (Cut_ (nmf, True, f) g pg pt)
 
 stitchAoCs :: Node -> [(BS, Term, Form)] -> Proof -> Proof -> Proof
-stitchAoCs ni [] pf pr = Cut_ ni pf pr 
+stitchAoCs ni [] pf pr = 
+  let (bf, f) = proofRSF pf in
+  let (br, f') = proofRSF pr in
+  if not bf && br && f == f' 
+  then Cut_ ni f pf pr 
+  else error "cut formula mismatch"
 stitchAoCs ni ((nm, x, f) : nxfs) pf pr = 
   let p = stitchAoCs (nm, True, f) nxfs pf pr in
-  AoC_ ni x p 
+  let (b, g) = proofRSF p in
+  if b then AoC_ ni x g p else error "AoC is not T-signed" 
 
 lastSkolemIdx :: [(BS, Term, Form)] -> IO Int
 lastSkolemIdx [] = mzero
@@ -650,7 +656,7 @@ deliteral sftn loc (b, h) (ExF' vxs f p) = do
 deliteral sftn loc (b, h) (Cut' f p q) = do
   p' <- deliteral' sftn (extLoc loc 1) (False, f) p 
   q' <- deliteral' sftn (extLoc loc 0) (True, f) q 
-  return $ Cut_ (locBS loc, b, h) p' q'
+  return $ Cut_ (locBS loc, b, h) f p' q'
   
 deliteral sftn loc (b, h) (Mrk s p) = deliteral sftn loc (b, h) p
 
@@ -661,7 +667,7 @@ deliteral sftn loc (b, h) (Mrk s p) = deliteral sftn loc (b, h) p
 --   let sf' = S.insert g sf 
 --   checkStelabs sf' slbs
 
-elab :: Bool -> TPTP -> Invranch -> [Step] -> IO Proof  -- [Elab]
+elab :: Bool -> Prob -> Invranch -> [Step] -> IO Proof  -- [Elab]
 elab vb tptp ivch stps = do
   slbs <- stepsToStelabs vb tptp stps
   -- checkStelabs sf slbs

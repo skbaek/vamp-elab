@@ -281,27 +281,27 @@ formSJ (Fa _ f) = formSJ f
 formSJ (Ex _ f) = formSJ f
 formSJ _ = False
 
-elabSingleJunct :: Elab -> Bool
-elabSingleJunct ((_, _, f), _, _) = formSJ f
+-- elabSingleJunct :: Elab -> Bool
+-- elabSingleJunct ((_, _, f), _, _) = formSJ f
 
 gentToText :: Gent -> Maybe BS
-gentToText (Genf t []) = return t
+gentToText (GenT t []) = return t
 gentToText _ = Nothing
 
 anfToStep :: Anf -> Maybe Step
-anfToStep (n, r, g, Just (Genf "file" [_, Genf m []], _)) = return (n, "file", [m], conjecturize r g)
-anfToStep (n, _, g, Just (Genf "introduced" [Genf "predicate_definition_introduction" [],
-  Genl [Genf "new_symbols" [Genf "naming" [],Genl [Genf r []]]]], _)) =
+anfToStep (n, r, g, Just (GenT "file" [_, GenT m []], _)) = return (n, "file", [m], conjecturize r g)
+anfToStep (n, _, g, Just (GenT "introduced" [GenT "predicate_definition_introduction" [],
+  Genl [GenT "new_symbols" [GenT "naming" [],Genl [GenT r []]]]], _)) =
     return (n, "predicate_definition_introduction", [], g)
-anfToStep (n, _, g, Just (Genf "introduced" [Genf "avatar_definition" [],
-  Genl [Genf "new_symbols" [Genf "naming" [], Genl [Genf r []]]]], _)) =
+anfToStep (n, _, g, Just (GenT "introduced" [GenT "avatar_definition" [],
+  Genl [GenT "new_symbols" [GenT "naming" [], Genl [GenT r []]]]], _)) =
     return (n, "avatar_definition", [], g)
-anfToStep (n, _, g, Just (Genf "introduced" [Genf "choice_axiom" [], Genl []], _)) =
+anfToStep (n, _, g, Just (GenT "introduced" [GenT "choice_axiom" [], Genl []], _)) =
   return (n, "choice_axiom", [], g)
-anfToStep (n, _, g, Just (Genf "inference" [Genf "avatar_sat_refutation" [], _, Genl l], _)) = do
+anfToStep (n, _, g, Just (GenT "inference" [GenT "avatar_sat_refutation" [], _, Genl l], _)) = do
   txs <- mapM gentToText l
   return (n, "avatar_sat_refutation", txs, g)
-anfToStep (n, _, g, Just (Genf "inference" [Genf r [], _, Genl l], _)) = do
+anfToStep (n, _, g, Just (GenT "inference" [GenT r [], _, Genl l], _)) = do
   txs <- mapM gentToText l
   return (n, r, txs, g)
 anfToStep (_, _, _, Just (ft, _)) = error $ "AF-to-step failure (Just) : " ++ show (ppGent ft) ++ "\n"

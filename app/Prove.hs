@@ -932,7 +932,7 @@ mapSearch vm fs gs = do
   first (\ (vm_, fs_) -> mapSearch vm_ fs_ gs) zs
 
 origTimeLimit :: NominalDiffTime
-origTimeLimit = 10
+origTimeLimit = 60
 
 origSearch :: UTCTime -> Bool -> Int -> VC -> [(Form, Form)] -> IO (Maybe VC)
 origSearch _ md dt vc [] = return (Just vc)
@@ -1177,7 +1177,10 @@ conTerm vm x y = do
   return vm
 
 orig :: Form -> Form -> IO Prf
-orig f g 
+orig f g = origCore f g <|> (ps "Orig failure!\n" >> return Open')
+
+origCore :: Form -> Form -> IO Prf
+origCore f g 
   | f == g = return $ Id' f
   | otherwise = do
     (f', g', pf) <- origPrep f g
@@ -1187,17 +1190,9 @@ orig f g
     case mvc of 
       Just vc -> 
         do let vr = vcToVr $ pruneVC vc
-           p <- porg' vr 0 f' g' <|> error "porg-failure"
-           -- verify 0 S.empty (S.singleton (f' <=> g')) p 
+           p <- porg' vr 0 f' g' 
            return $ Cut' (f <=> g) (pf p) $ iffMP f g
       _ -> ps "Orig timeout!\n" >> return Open'
-
--- failAsm :: Int -> IO Prf -> IO Prf
--- failAsm k pf = do
---   rst <- timeout k (pf <|> return Open')
---   case rst of 
---     Just p -> return p 
---     _ -> return Open' 
 
 constraint :: Set BS -> Set BS -> Map BS (Set BS)
 constraint vs ws = L.foldl (\ m_ v_ -> HM.insert v_ ws m_) HM.empty (S.toList vs)

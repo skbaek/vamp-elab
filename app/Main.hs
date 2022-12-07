@@ -16,6 +16,7 @@ import Data.List as L
 import Data.Set as S
 import Data.Map as HM
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BD
 
 stepHyps :: Step -> [BS]
 stepHyps (_, _, ns, _) = ns
@@ -60,28 +61,16 @@ readSteps :: String -> IO [Step]
 readSteps nm = BS.readFile nm >>= runParser (ign >> tstp) 
 
 elaborate :: Bool -> String -> String -> String -> IO ()
-elaborate vb pnm snm anm = do
+elaborate vb pnm snm enm = do
   stps <- sortSteps <$> readSteps snm
   tptp <- readTptp pnm HM.empty
   let ivch = HM.foldrWithKey (\ nm_ f_ -> HM.insert (True, f_) nm_) HM.empty tptp
   prf <- elab vb tptp ivch stps
-  writeProof anm prf
-
-  -- when vb $ ps "Writing proof : \n"
-  -- writeProof cstp (S.toList nms) prf
-  
-
-
-  -- when vb $ ps "Reading problem and solution...\n"
-  -- (ntf, sf, ftn, stps) <- hypsSteps vb tptp tstp
-  -- when vb $ ps "Elaborating solution...\n"
-  -- let nms = L.foldl S.union S.empty (L.map stepHypNames stps)
-  -- prf <- elab vb ntf sf ftn stps
-  -- when vb $ ps "Writing proof : \n"
+  BD.writeFile enm $ ppListNl ppElab $ linearize prf
 
 main :: IO ()
 main = do 
   (tptp : tstp : cstp : flags) <- getArgs 
   let vb = "silent" `notElem` flags
-  (Just ()) <- timeout 60000000 (elaborate vb tptp tstp cstp) 
+  (Just ()) <- timeout 300000000 (elaborate vb tptp tstp cstp) 
   skip
