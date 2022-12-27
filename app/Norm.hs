@@ -10,61 +10,64 @@ import Data.List as L
 boolSimp :: Form -> Form
 boolSimp (Rel r xs) = Rel r xs
 boolSimp (Eq x y) = Eq x y
+boolSimp Top = Top
+boolSimp Bot = Bot
 boolSimp (Not f) =
   case boolSimp f of
-    And [] -> Or []
-    Or [] -> And []
+    Top -> Bot
+    Bot -> Top
     g -> Not g
 boolSimp (Or fs) =
   let gs = L.map boolSimp fs in
-  if top `elem` gs 
-    then top
-    -- else case L.filter (/= bot) gs of
-    --        [g] -> g
-    --        hs -> Or hs
-    else Or $ L.filter (/= bot) gs 
+  if Top `elem` gs 
+    then Top
+    else Or $ L.filter (/= Bot) gs 
 boolSimp (And fs) =
   let gs = L.map boolSimp fs in
-  if bot `elem` gs 
-    then bot
-    -- else case L.filter (/= top) gs of
+  if Bot `elem` gs 
+    then Bot
+    -- else case L.filter (/= Top) gs of
     --        [g] -> g
     --        hs -> And hs
-    else And $ L.filter (/= top) gs 
+    else And $ L.filter (/= Top) gs 
 boolSimp (Fa vs f) =
   case boolSimp f of
-    And [] -> And []
-    Or [] -> Or []
+    Top -> Top
+    Bot -> Bot
     g -> Fa vs g
 boolSimp (Ex vs f) =
   case boolSimp f of
-    And [] -> And []
-    Or [] -> Or []
+    Top -> Top
+    Bot -> Bot
     g -> Ex vs g
 boolSimp (Imp f g) =
   case (boolSimp f, boolSimp g) of
-    (Or [], _) -> top
-    (_, And []) -> top
-    (And [], g_) -> g_
-    (f_, Or []) -> Not f_
+    (Bot, _) -> Top
+    (_, Top) -> Top
+    (Top, g_) -> g_
+    (f_, Bot) -> Not f_
     (f', g') -> Imp f' g'
 boolSimp (Iff f g) =
   case (boolSimp f, boolSimp g) of
-    (And [], g') -> g'
-    (f', And []) -> f'
-    (Or [], g') -> Not g'
-    (f', Or []) -> Not f'
+    (Top, g') -> g'
+    (f', Top) -> f'
+    (Bot, g') -> Not g'
+    (f', Bot) -> Not f'
     (f', g') -> Iff f' g'
 
 flatOr :: [Form] -> [Form]
-flatOr [] = []
-flatOr (Or [] : fs) = flatOr fs
+flatOr [] = error "Cannot flatten empty disjunction"
+flatOr [Or fs] = flatOr fs
+flatOr [f] = [f]
+flatOr (Bot : fs) = flatOr fs
 flatOr (Or fs : gs) = flatOr fs ++ flatOr gs
 flatOr (f : fs) = f : flatOr fs
 
-flatAnd :: [Form] -> [Form]
-flatAnd [] = []
-flatAnd (And [] : fs) = flatAnd fs
+flatAnd :: [Form] ->[Form]
+flatAnd [] = error "Cannot flatten empty conjunction"
+flatAnd [And fs] = flatAnd fs
+flatAnd [f] = [f]
+flatAnd (Top : fs) = flatAnd fs
 flatAnd (And fs : gs) = flatAnd fs ++ flatAnd gs
 flatAnd (f : fs) = f : flatAnd fs
 
@@ -118,14 +121,14 @@ flatSimp (Not f) = Not $ flatSimp f
 flatSimp (Or fs) = 
   case flatOr $ L.map flatSimp fs of 
     [f] -> f 
-    fs' -> if top `elem` fs' 
-           then top 
+    fs' -> if Top `elem` fs' 
+           then Top 
            else Or fs'
 flatSimp (And fs) = 
   case flatAnd $ L.map flatSimp fs of 
     [f] -> f 
-    fs' -> if bot `elem` fs' 
-           then bot 
+    fs' -> if Bot `elem` fs' 
+           then Bot 
            else And fs'
 flatSimp (Imp f g) = Imp (flatSimp f) (flatSimp g)
 flatSimp (Iff f g) = Iff (flatSimp f) (flatSimp g)
@@ -135,6 +138,8 @@ flatSimp f = f
 
 nnf :: Bool -> Form -> Form
 nnf ex (Not (Not f)) = nnf ex f
+nnf ex (Not Top) = Bot
+nnf ex (Not Bot) = Top
 nnf ex (Not (Or fs)) = And $ L.map (nnf ex . Not) fs
 nnf ex (Not (And fs)) = Or $ L.map (nnf ex . Not) fs
 nnf ex (Not (Imp f g)) = nnf ex (And [Not g, f])
@@ -162,6 +167,8 @@ nnf ex (Ex vs f) = Ex vs $ nnf ex f
 
 nnf ex (Not (Rel r xs)) = Not $ Rel r xs
 nnf ex (Not (Eq x y)) = Not $ Eq x y
+nnf ex Top = Top
+nnf ex Bot = Bot
 nnf ex (Rel r xs) = Rel r xs
 nnf ex (Eq x y) = Eq x y
 
@@ -179,6 +186,8 @@ delVacVars (Imp f g) = Imp (delVacVars f) (delVacVars g)
 delVacVars (Iff f g) = Iff (delVacVars f) (delVacVars g)
 delVacVars (Or fs) = Or $ L.map delVacVars fs
 delVacVars (And fs) = And $ L.map delVacVars fs
+delVacVars f@Top = f
+delVacVars f@Bot = f
 delVacVars f@(Rel _ _) = f
 delVacVars f@(Eq _ _) = f
 
@@ -191,57 +200,8 @@ ppr rs b f@(Iff _ _) = f
 ppr rs b (Fa vs f) = Fa vs $ ppr rs b f
 ppr rs b (Ex vs f) = Ex vs $ ppr rs b f
 ppr rs b f@(Rel r _) 
-  | S.member r rs = if b then And [] else Or []
+  | S.member r rs = if b then Top else Bot
   | otherwise = f
 ppr rs _ f@(Eq _ _) = f
-
-{-
-ppr :: Set Text -> Bool -> Form -> Form
-ppr rs b (Not f) =
-  let f' = ppr rs (not b) f in
-  case f' of
-    And [] -> Or []
-    Or [] -> And []
-    _ -> Not f'
-ppr rs b (Or fs) =
-  let fs' = flatOr (L.map (ppr rs b) fs) in
-  if And [] `elem` fs'
-  then And []
-  else case L.filter (Or [] /=) fs' of
-         [f] -> f
-         fs'' -> Or fs''
-ppr rs b (And fs) =
-  let fs' = flatAnd (L.map (ppr rs b) fs) in
-  if Or [] `elem` fs'
-  then Or []
-  else case L.filter (And [] /=) fs' of
-         [f] -> f
-         fs'' -> And fs''
-ppr rs b (Imp f g) =
-  let f' = ppr rs (not b) f in
-  let g' = ppr rs b g in
-  case (f', g') of
-    (And [], _) -> g'
-    (Or [], _) -> And []
-    (_, And []) -> And []
-    (_, Or []) -> Not f'
-    _ -> Imp f' g'
-ppr rs b f@(Iff _ _) = f
-ppr rs b (Fa vs f) =
-  case ppr rs b f of
-    And [] -> And []
-    Or [] -> Or []
-    Fa ws f' -> Fa (vs ++ ws) f'
-    f' -> Fa vs f'
-ppr rs b (Ex vs f) =
-  case ppr rs b f of
-    And [] -> And []
-    Or [] -> Or []
-    Ex ws f' -> Ex (vs ++ ws) f'
-    f' -> Ex vs f'
-ppr rs b f@(Rel r _) =
-  if S.member r rs
-  then if b then And [] else Or []
-  else f
-ppr rs _ f@(Eq _ _) = f
--}
+ppr rs _ f@Bot = f
+ppr rs _ f@Top = f

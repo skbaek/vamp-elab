@@ -39,19 +39,21 @@ iffIffAnd f g =
 notFaIffExNot :: Int -> [BS] -> Form -> Prf
 notFaIffExNot k vs f = 
   let (_, vxs) = varPars k vs in
+  let ks = rangeOver k vs in
   let f' = substForm vxs f in
   iffRFull (Not (Fa vs f)) (Ex vs (Not f)) 
-    (NotT' (Fa vs f) $ FaF' vs k f $ ExF' vxs (Not f) $ NotF' f' $ Id' f') 
-    (NotF' (Fa vs f) $ ExT' vs k (Not f) $ FaT' vxs f $ NotT' f' $ Id' f')
+    (NotT' (Fa vs f) $ FaF' vs ks f $ ExF' vxs (Not f) $ NotF' f' $ Id' f') 
+    (NotF' (Fa vs f) $ ExT' vs ks (Not f) $ FaT' vxs f $ NotT' f' $ Id' f')
 
 -- notFaIffExNot vs f : |- ~(? vs f) <=> ! vs (~ f)
 notExIffFaNot :: Int -> [BS] -> Form -> Prf
 notExIffFaNot k vs f = 
   let (_, vxs) = varPars k vs in
+  let ks = rangeOver k vs in
   let f' = substForm vxs f in
   iffRFull (Not (Ex vs f)) (Fa vs (Not f)) 
-    (NotT' (Ex vs f) $ FaF' vs k (Not f) $ ExF' vxs f $ NotF' f' $ Id' f') 
-    (NotF' (Ex vs f) $ ExT' vs k f $ FaT' vxs (Not f) $ NotT' f' $ Id' f')
+    (NotT' (Ex vs f) $ FaF' vs ks (Not f) $ ExF' vxs f $ NotF' f' $ Id' f') 
+    (NotF' (Ex vs f) $ ExT' vs ks f $ FaT' vxs (Not f) $ NotT' f' $ Id' f')
 
 -- notOrIffAndNots fs : |- ~(\/ fs) <=> /\ (~fs)
 notOrIffAndNots :: [Form] -> Prf
@@ -174,14 +176,16 @@ impCong e f g h =
 bloatFaIff :: Int -> [BS] -> Form -> Prf 
 bloatFaIff k vs f = 
   let vxs = map (, zt) vs in
-  iffRFull (Fa vs f) f (FaT' vxs f $ Id' f) (FaF' vs k f $ Id' f)
+  let ks = rangeOver k vs in
+  iffRFull (Fa vs f) f (FaT' vxs f $ Id' f) (FaF' vs ks f $ Id' f)
 
 -- requires : none of vs occurs in f
 -- bloatExIff k vs f : |- (? vs f) <=> f
 bloatExIff :: Int -> [BS] -> Form -> Prf 
 bloatExIff k vs f = 
   let vxs = map (, zt) vs in
-  iffRFull (Ex vs f) f (ExT' vs k f $ Id' f) (ExF' vxs f $ Id' f)
+  let ks = rangeOver k vs in
+  iffRFull (Ex vs f) f (ExT' vs ks f $ Id' f) (ExF' vxs f $ Id' f)
 
 degenHelper :: [(BS, Term)] -> BS -> (BS, Term)
 degenHelper vxs w = 
@@ -195,12 +199,16 @@ degenHelper vxs w =
 bloatFaIffFa :: Int -> [BS] -> [BS] -> Form -> Prf 
 bloatFaIffFa k vs ws f = 
   let (_, vxs) = varPars k vs in
+  let vks = rangeOver k vs in
+  let wks = rangeOver k ws in
   let (_, wxs) = varPars k ws in
   let vxs' = map (degenHelper wxs) vs in
   let wxs' = map (degenHelper vxs) ws in
   let fv = substForm vxs f in
   let fw = substForm wxs f in
-  iffRFull (Fa vs f) (Fa ws f) (FaF' ws k f $ FaT' vxs' f $ Id' fw) (FaF' vs k f $ FaT' wxs' f $ Id' fv)
+  iffRFull (Fa vs f) (Fa ws f) 
+    (FaF' ws wks f $ FaT' vxs' f $ Id' fw) 
+    (FaF' vs vks f $ FaT' wxs' f $ Id' fv)
 
 -- requires : ws is a subset of vs 
 -- requires : none of (vs \ ws) occurs in f
@@ -208,12 +216,13 @@ bloatFaIffFa k vs ws f =
 bloatExIffEx :: Int -> [BS] -> [BS] -> Form -> Prf 
 bloatExIffEx k vs ws f = 
   let (_, vxs) = varPars k vs in
+  let ks = rangeOver k vs in
   let (_, wxs) = varPars k ws in
   let vxs' = map (degenHelper wxs) vs in
   let wxs' = map (degenHelper vxs) ws in
   let fv = substForm vxs f in
   let fw = substForm wxs f in
-  iffRFull (Ex vs f) (Ex ws f) (ExT' vs k f $ ExF' wxs' f $ Id' fv) (ExT' ws k f $ ExF' vxs' f $ Id' fw)
+  iffRFull (Ex vs f) (Ex ws f) (ExT' vs ks f $ ExF' wxs' f $ Id' fv) (ExT' ws ks f $ ExF' vxs' f $ Id' fw)
 
 -- p : f' |- g'
 ---------------
@@ -221,9 +230,10 @@ bloatExIffEx k vs ws f =
 exImpEx :: [BS] -> Int -> Form -> Form -> Prf -> Prf
 exImpEx vs k f g p = 
   let (_, vxs) = varPars k vs in
+  let ks = rangeOver k vs in
   let f' = substForm vxs f in
   let g' = substForm vxs g in
-  impFAC (Ex vs f) (Ex vs g) $ ExT' vs k f $ ExF' vxs g p
+  impFAC (Ex vs f) (Ex vs g) $ ExT' vs ks f $ ExF' vxs g p
 
 -- p : f' |- g'
 ---------------
@@ -231,14 +241,16 @@ exImpEx vs k f g p =
 faImpFa :: [BS] -> Int -> Form -> Form -> Prf -> Prf
 faImpFa vs k f g p = 
   let (_, vxs) = varPars k vs in
+  let ks = rangeOver k vs in
   let f' = substForm vxs f in
   let g' = substForm vxs g in
-  impFAC (Fa vs f) (Fa vs g) $ FaF' vs k g $ FaT' vxs f p
+  impFAC (Fa vs f) (Fa vs g) $ FaF' vs ks g $ FaT' vxs f p
 
 -- ! vs (f <=> g) |- (? ws f) <=> (? ws g)
 faIffToExIffEx' :: Int -> [BS] -> Form -> [BS] -> Form -> IO Prf
 faIffToExIffEx' k vs f ws g = do
   let (_, vxs) = varPars k vs 
+  let ks = rangeOver k vs
   let (_, wxs) = varPars k ws 
   wxs' <- mapM (\ w_ -> cast (find ((w_ ==) . fst) vxs)) ws
   vxs' <- mapM (\ v_ -> cast (find ((v_ ==) . fst) wxs)) vs
@@ -247,26 +259,28 @@ faIffToExIffEx' k vs f ws g = do
   let f'' = substForm vxs' f 
   let g'' = substForm wxs' g 
   return $ iffRFull (Ex vs f) (Ex ws g) 
-    (ExT' vs k f $ ExF' wxs' g $ FaT' vxs (f <=> g) $ iffMP f' g'') 
-    (ExT' ws k g $ ExF' vxs' f $ FaT' vxs' (f <=> g) $ iffMPR f'' g')
+    (ExT' vs ks f $ ExF' wxs' g $ FaT' vxs (f <=> g) $ iffMP f' g'') 
+    (ExT' ws ks g $ ExF' vxs' f $ FaT' vxs' (f <=> g) $ iffMPR f'' g')
 
 -- ! ws (f[vs |=> ws] <=> g) |- (? vs f) <=> (? ws g)
 faIffToExIffEx'' :: Int -> [BS] -> Form -> [BS] -> Form -> IO Prf
 faIffToExIffEx'' k vs f ws g = do
   let (_, vxs) = varPars k vs 
+  let ks = rangeOver k vs 
   let (_, wxs) = varPars k ws 
   vws <- mapM2 (\ v_ w_ -> return (v_, Var w_)) vs ws
   let f' = substForm vxs f 
   let f'' = substForm vws f 
   let g' = substForm wxs g 
   return $ iffRFull (Ex vs f) (Ex ws g) 
-    (ExT' vs k f $ ExF' wxs g $ FaT' wxs (f'' <=> g) $ iffMP f' g') 
-    (ExT' ws k g $ ExF' vxs f $ FaT' wxs (f'' <=> g) $ iffMPR f' g')
+    (ExT' vs ks f $ ExF' wxs g $ FaT' wxs (f'' <=> g) $ iffMP f' g') 
+    (ExT' ws ks g $ ExF' vxs f $ FaT' wxs (f'' <=> g) $ iffMPR f' g')
 
 -- ! ws (f[vw] <=> g) |- (? vs f) <=> (? ws g)
 genFaIffToExIffEx :: Form -> VR -> Int -> [BS] -> Form -> [BS] -> Form -> IO Prf
 genFaIffToExIffEx rfp (vw, wv) k vs f ws g = do
   let (_, vxs) = varPars k vs 
+  let ks = rangeOver k vs 
   let (_, wxs) = varPars k ws 
   vxs' <- mapM (cast . findEqvInst vw wxs) vs
   wxs' <- mapM (cast . findEqvInst wv vxs) ws
@@ -275,37 +289,30 @@ genFaIffToExIffEx rfp (vw, wv) k vs f ws g = do
   let f'' = substForm vxs' f 
   let g'' = substForm wxs' g 
   vws <- mapM (pairWithVR' (vw, wv)) vs 
-  -- let fp = appVrForm (vw, wv) f
   let fp = substForm vws f
-
-  --guardMsg "Reconstructed fp does not match" $ rfp == Fa ws (fp <=> g) 
-  --guardMsg "f[vxs] != f''" $ f' == substForm wxs fp
---
-  --guardMsg "Reconstructed f' does not match" $ f' == substForm wxs fp
-  --guardMsg "Reconstructed f'' does not match" $ f'' == substForm wxs' fp
-
-
   return $ iffRFull (Ex vs f) (Ex ws g) 
-    (ExT' vs k f $ ExF' wxs' g $ FaT' wxs' (fp <=> g) $ iffMP  f' g'') 
-    (ExT' ws k g $ ExF' vxs' f $ FaT' wxs  (fp <=> g) $ iffMPR f'' g')
+    (ExT' vs ks f $ ExF' wxs' g $ FaT' wxs' (fp <=> g) $ iffMP  f' g'') 
+    (ExT' ws ks g $ ExF' vxs' f $ FaT' wxs  (fp <=> g) $ iffMPR f'' g')
 
 -- ! ws (f[vs |=> ws] <=> g) |- (! vs f) <=> (! ws g)
 faIffToFaIffFa'' :: Int -> [BS] -> Form -> [BS] -> Form -> IO Prf
 faIffToFaIffFa'' k vs f ws g = do
   let (_, vxs) = varPars k vs 
+  let ks = rangeOver k vs 
   let (_, wxs) = varPars k ws 
   vws <- mapM2 (\ v_ w_ -> return (v_, Var w_)) vs ws
   let f' = substForm vxs f 
   let f'' = substForm vws f 
   let g' = substForm wxs g 
   return $ iffRFull (Fa vs f) (Fa ws g) 
-    (FaF' ws k g $ FaT' vxs f $ FaT' wxs (f'' <=> g) $ iffMP f' g') 
-    (FaF' vs k f $ FaT' wxs g $ FaT' wxs (f'' <=> g) $ iffMPR f' g')
+    (FaF' ws ks g $ FaT' vxs f $ FaT' wxs (f'' <=> g) $ iffMP f' g') 
+    (FaF' vs ks f $ FaT' wxs g $ FaT' wxs (f'' <=> g) $ iffMPR f' g')
 
 -- ! vs (f <=> g) |- (! vs f) <=> (! ws g)
 faIffToFaIffFa' :: Int -> [BS] -> Form -> [BS] -> Form -> IO Prf
 faIffToFaIffFa' k vs f ws g = do
   let (_, vxs) = varPars k vs 
+  let ks = rangeOver k vs 
   let (_, wxs) = varPars k ws 
   wxs' <- mapM (\ w_ -> cast (find ((w_ ==) . fst) vxs)) ws
   vxs' <- mapM (\ v_ -> cast (find ((v_ ==) . fst) wxs)) vs
@@ -314,8 +321,8 @@ faIffToFaIffFa' k vs f ws g = do
   let f'' = substForm vxs' f 
   let g'' = substForm wxs' g 
   return $ iffRFull (Fa vs f) (Fa ws g) 
-    (FaF' ws k g $ FaT' vxs' f $ FaT' vxs' (f <=> g) $ iffMP f'' g') 
-    (FaF' vs k f $ FaT' wxs' g $ FaT' vxs  (f <=> g) $ iffMPR f' g'')
+    (FaF' ws ks g $ FaT' vxs' f $ FaT' vxs' (f <=> g) $ iffMP f'' g') 
+    (FaF' vs ks f $ FaT' wxs' g $ FaT' vxs  (f <=> g) $ iffMPR f' g'')
 
 findEqvInst :: HM.Map BS BS -> [(BS, Term)] -> BS -> Maybe (BS, Term)
 findEqvInst vw wxs v = do 
@@ -327,6 +334,7 @@ findEqvInst vw wxs v = do
 genFaIffToFaIffFa :: VR -> Int -> [BS] -> Form -> [BS] -> Form -> IO Prf
 genFaIffToFaIffFa (vw, wv) k vs f ws g = do
   let (_, vxs) = varPars k vs 
+  let ks = rangeOver k vs 
   let (_, wxs) = varPars k ws 
   vxs' <- mapM (cast . findEqvInst vw wxs) vs
   wxs' <- mapM (cast . findEqvInst wv vxs) ws
@@ -338,8 +346,8 @@ genFaIffToFaIffFa (vw, wv) k vs f ws g = do
   vws <- mapM (pairWithVR' (vw, wv)) vs 
   let fp = substForm vws f
   return $ iffRFull (Fa vs f) (Fa ws g) 
-    (FaF' ws k g $ FaT' vxs' f $ FaT' wxs  (fp <=> g) $ iffMP  f'' g' ) 
-    (FaF' vs k f $ FaT' wxs' g $ FaT' wxs' (fp <=> g) $ iffMPR f'  g'')
+    (FaF' ws ks g $ FaT' vxs' f $ FaT' wxs  (fp <=> g) $ iffMP  f'' g' ) 
+    (FaF' vs ks f $ FaT' wxs' g $ FaT' wxs' (fp <=> g) $ iffMPR f'  g'')
 
 -- -- ! ws (f' <=> g) |- (? vs f) <=> (? ws g)
 -- genFaIffToExIffEx' :: Int -> [BS] -> [Term] -> Form -> Form -> [BS] -> [Term] -> Form -> IO Prf
@@ -354,28 +362,33 @@ genFaIffToFaIffFa (vw, wv) k vs f ws g = do
 --     (ExT' vs k f $ ExF' wxs' g $ FaT' wxs' (fp <=> g) $ iffMP  f'' g' ) 
 --     (ExT' ws k g $ ExF' vxs' f $ FaT' wxs  (fp <=> g) $ iffMPR f'  g'')
 
-
 -- faFaIff k vs ws f : |- ! vs (! ws f) <=> ! (vs ++ ws) f
 faFaIff :: Int -> [BS] -> [BS] -> Form -> Prf
 faFaIff k vs ws f = 
   let (k', vxs) = varPars k vs in
+  let ksks' = rangeOver k (vs ++ ws) in
+  let ks = rangeOver k vs in
+  let ks' = rangeOver k' ws in
   let (_, wxs) = varPars k' ws in
   let f' = substForm vxs f in
   let f'' = substForm wxs f' in
   iffRFull (Fa vs (Fa ws f)) (Fa (vs ++ ws) f) 
-    (FaF' (vs ++ ws) k f $ FaT' vxs (Fa ws f) $ FaT' wxs f' $ Id' f'') 
-    (FaF' vs k (Fa ws f) $ FaF' ws k' f' $ FaT' (vxs ++ wxs) f $ Id' f'')
+    (FaF' (vs ++ ws) ksks' f $ FaT' vxs (Fa ws f) $ FaT' wxs f' $ Id' f'') 
+    (FaF' vs ks (Fa ws f) $ FaF' ws ks' f' $ FaT' (vxs ++ wxs) f $ Id' f'')
 
 -- exExIff k vs ws f : |- ? vs (? ws f) <=> ? (vs ++ ws) f
 exExIff :: Int -> [BS] -> [BS] -> Form -> Prf
 exExIff k vs ws f = 
   let (k', vxs) = varPars k vs in
+  let vks = rangeOver k vs in
+  let wks = rangeOver k' ws in
+  let vwks = rangeOver k (vs ++ ws) in
   let (_, wxs) = varPars k' ws in
   let f' = substForm vxs f in
   let f'' = substForm wxs f' in
   iffRFull (Ex vs (Ex ws f)) (Ex (vs ++ ws) f) 
-    (ExT' vs k (Ex ws f) $ ExT' ws k' f' $ ExF' (vxs ++ wxs) f $ Id' f'')
-    (ExT' (vs ++ ws) k f $ ExF' vxs (Ex ws f) $ ExF' wxs f' $ Id' f'') 
+    (ExT' vs vks (Ex ws f) $ ExT' ws wks f' $ ExF' (vxs ++ wxs) f $ Id' f'')
+    (ExT' (vs ++ ws) vwks f $ ExF' vxs (Ex ws f) $ ExF' wxs f' $ Id' f'') 
     
 faIffToFaIffFa :: [BS] -> Int -> Form -> Form -> Prf
 faIffToFaIffFa vs k f g = 
@@ -462,39 +475,41 @@ singleOrIff f = iffRFull (Or [f]) f (OrT' [(f, Id' f)]) (OrF' [f] [f] $ Id' f)
 singleAndIff :: Form -> Prf
 singleAndIff f = iffRFull (And [f]) f (AndT' [f] [f] $ Id' f) (AndF' [(f, Id' f)])
 
--- faTopIff : Fa vs top <=> top
+-- faTopIff : Fa vs Top <=> Top
 faTopIff :: Int -> [BS] -> Prf
 faTopIff k vs = 
-  iffRFull (Fa vs top) top (AndF' []) (FaF' vs k top $ AndF' [])
+  let ks = rangeOver k vs in
+  iffRFull (Fa vs Top) Top TopF' (FaF' vs ks Top TopF')
 
--- faBotIff : Fa vs top <=> top
+-- faBotIff : Fa vs Top <=> Top
 faBotIff :: [BS] -> Prf
 faBotIff vs = 
   let vxs = map (, zt) vs in
-  iffRFull (Fa vs bot) bot (FaT' vxs bot $ OrT' []) (OrT' [])
+  iffRFull (Fa vs Bot) Bot (FaT' vxs Bot BotT') BotT'
 
--- exBotIff : Ex vs bot <=> bot
+-- exBotIff : Ex vs Bot <=> Bot
 exBotIff :: Int -> [BS] -> Prf
 exBotIff k vs =
-  iffRFull (Ex vs bot) bot (ExT' vs k bot $ OrT' []) (OrT' [])
+  let ks = rangeOver k vs in
+  iffRFull (Ex vs Bot) Bot (ExT' vs ks Bot BotT') BotT'
 
--- exTopIff : Ex vs top <=> top
+-- exTopIff : Ex vs Top <=> Top
 exTopIff :: [BS] -> Prf
 exTopIff vs = 
   let vxs = map (, zt) vs in
-  iffRFull (Ex vs top) top (AndF' []) (ExF' vxs top $ AndF' [])
+  iffRFull (Ex vs Top) Top TopF' (ExF' vxs Top TopF')
 
--- degenOrIff fs : \/ fs <=> top
--- requires : top <- fs
+-- degenOrIff fs : \/ fs <=> Top
+-- requires : Top <- fs
 degenOrIff :: [Form] -> Prf
-degenOrIff fs = iffRFull (Or fs) top (AndF' []) (OrF' fs [top] $ AndF' [])
+degenOrIff fs = iffRFull (Or fs) Top TopF' (OrF' fs [Top] TopF')
 
--- degenAndIff fs : /\ fs <=> bot
--- requires : bot <- fs
+-- degenAndIff fs : /\ fs <=> Bot
+-- requires : Bot <- fs
 degenAndIff :: [Form] -> Prf
-degenAndIff fs = iffRFull (And fs) bot (AndT' fs [bot] $ OrT' []) (OrT' [])
+degenAndIff fs = iffRFull (And fs) Bot (AndT' fs [Bot] BotT') BotT'
 
--- bloatOrIff fs : \/ fs <=> \/ (fs \ {bot})
+-- bloatOrIff fs : \/ fs <=> \/ (fs \ {Bot})
 bloatOrIff :: [Form] -> Prf
 bloatOrIff fs = 
   let gs = filter (not . isBot) fs in 
@@ -502,27 +517,27 @@ bloatOrIff fs =
         map 
           ( \ f_ -> 
              case f_ of 
-               Or [] -> (f_, OrT' [])
+               Bot -> (f_, BotT')
                _ -> (f_, Id' f_ ) )
           fs in
   let gps = map (\ g_ -> (g_, Id' g_)) gs in
   iffRFull (Or fs) (Or gs) (OrF' gs gs $ OrT' fps) (OrF' fs fs $ OrT' gps)
 
--- requires : (fs \ {bot}) = {f}
+-- requires : (fs \ {Bot}) = {f}
 -- bloatOrIff' fs f : \/ fs <=> f
 bloatOrIff' :: [Form] -> Form -> Prf
 bloatOrIff' fs f = 
-  let fps = map (\ f_ -> if isBot f_ then (f_, OrT' []) else (f_, Id' f_)) fs in
+  let fps = map (\ f_ -> if isBot f_ then (f_, BotT') else (f_, Id' f_)) fs in
   iffRFull (Or fs) f (OrT' fps) (OrF' fs [f] $ Id' f)
 
--- requires : (fs \ {top}) = {f}
+-- requires : (fs \ {Top}) = {f}
 -- bloatAndIff' fs f : /\ fs <=> f
 bloatAndIff' :: [Form] -> Form -> Prf
 bloatAndIff' fs f = 
-  let fps = map (\ f_ -> if isTop f_ then (f_, AndF' []) else (f_, Id' f_)) fs in
+  let fps = map (\ f_ -> if isTop f_ then (f_, TopF') else (f_, Id' f_)) fs in
   iffRFull (And fs) f (AndT' fs [f] $ Id' f) (AndF' fps)
 
--- bloatAndIff fs : /\ fs <=> /\ (fs \ {top})
+-- bloatAndIff fs : /\ fs <=> /\ (fs \ {Top})
 bloatAndIff :: [Form] -> Prf
 bloatAndIff fs = 
   let gs = filter (not . isTop) fs in 
@@ -530,7 +545,7 @@ bloatAndIff fs =
         map 
           ( \ f_ -> 
              case f_ of 
-               And [] -> (f_, AndF' [])
+               Top -> (f_, TopF')
                _ -> (f_, Id' f_ ) )
           fs in
   let gps = map (\ g_ -> (g_, Id' g_)) gs in

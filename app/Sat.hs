@@ -10,7 +10,7 @@ import Basic
 import PP
 import Data.List as L
 import Data.Map as HM (Map, lookup, insert, map, empty)
-import Data.Set as S (Set, insert, fromList)
+import Data.Set as S (Set, insert, fromList, empty)
 import Data.Functor ((<&>))
 import Control.Monad as M (guard, foldM, foldM_, (>=>), mzero)
 import qualified Data.ByteString as BS
@@ -88,6 +88,7 @@ useLftLit (Not f) = NotT' f $ Id' f
 useLftLit f = NotT' f $ Id' f
 
 lratPrf :: Map Int Form -> [Form] -> [Int] -> IO Prf
+lratPrf fs [] hs = lratPrfCore fs S.empty hs
 lratPrf fs ls hs = do 
   let nls = L.map negLit ls  
   let nlps = L.map (\ l_ -> (negLit l_, useRgtLit l_)) ls 
@@ -99,8 +100,9 @@ lratsPrf :: Map Int Form -> [Lrat] -> IO Prf
 lratsPrf _ [] = error "Empty LRAT proof"
 lratsPrf fs [Add _ [] hs] = do 
   p <- lratPrf fs [] hs 
-  return $ Cut' bot p (OrT' [])
+  return $ Cut' Bot p BotT'
 lratsPrf fs (Add k ls hs : lrs) = do 
+  guardMsg "Empty clause detected" (not $ null ls)
   p0 <- lratPrf fs ls hs 
   let fs' = HM.insert k (Or ls) fs
   p1 <- lratsPrf fs' lrs 

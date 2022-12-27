@@ -68,9 +68,13 @@ elaborate vb pnm snm enm = do
   prf <- elab vb tptp ivch stps
   BD.writeFile enm $ ppListNl ppElab $ linearize prf
 
+isExtra :: Step -> Bool
+isExtra ('e' :> _, _, _, _) = True
+isExtra _ = False
+
 main :: IO ()
 main = do 
   (tptp : tstp : cstp : flags) <- getArgs 
   let vb = "silent" `notElem` flags
-  (Just ()) <- timeout 300000000 (elaborate vb tptp tstp cstp) 
+  (Just ()) <- timeout 120000000 (elaborate vb tptp tstp cstp) 
   skip

@@ -23,7 +23,6 @@ import Data.Maybe as MB (mapMaybe, isJust, fromMaybe)
 import Control.Applicative ( Alternative((<|>)) )
 import qualified Data.Bifunctor as DBF
 import Data.Tuple (swap)
-import System.Timeout (timeout)
 import Debug.Trace (trace)
 import Data.Time.Clock 
 import Data.ByteString.Builder (Builder, toLazyByteString)
@@ -87,17 +86,19 @@ pdne k f g
      (Fa vs f, Fa ws g) -> do
        guard (vs == ws)
        let (k', vxs) = varPars k vs
+       let ks = rangeOver k vs
        let f' = substForm vxs f
        let g' = substForm vxs g
        p <- pdne k' f' g'
-       return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+       return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
      (Ex vs f, Ex ws g) -> do
        guard (vs == ws)
        let (k', vxs) = varPars k vs
+       let ks = rangeOver k vs
        let f' = substForm vxs f
        let g' = substForm vxs g
        p <- pdne k' f' g'
-       return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
+       return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToExIffEx vs k f g
      _ -> error "prove-DNE"
 
 prn :: Int -> Form -> Form -> IO Prf
@@ -120,6 +121,7 @@ prn k (Iff e f) (Iff g h) = do
   return $ Cut' (e <=> g) pl $ Cut' (f <=> h) pr $ iffCong e f g h
 prn k (Fa vs f) (Fa ws g) = do
   let (k', xs) = listPars k ws
+  let ks = rangeOver k ws
   vxs <- zipM vs xs
   wxs <- zipM ws xs
   vws <- mapM2 (\ v_ w_ -> return (v_, Var w_)) vs ws
@@ -128,9 +130,10 @@ prn k (Fa vs f) (Fa ws g) = do
   let g' = substForm wxs g
   guard (substForm wxs f'' == f') 
   p <- prn k' f' g'
-  Cut' (Fa ws $ f'' <=> g) (FaF' ws k (f'' <=> g) p) <$> faIffToFaIffFa'' k vs f ws g
+  Cut' (Fa ws $ f'' <=> g) (FaF' ws ks (f'' <=> g) p) <$> faIffToFaIffFa'' k vs f ws g
 prn k (Ex vs f) (Ex ws g) = do
   let (k', xs) = listPars k ws
+  let ks = rangeOver k ws
   vxs <- zipM vs xs
   wxs <- zipM ws xs
   vws <- mapM2 (\ v_ w_ -> return (v_, Var w_)) vs ws
@@ -139,7 +142,7 @@ prn k (Ex vs f) (Ex ws g) = do
   let g' = substForm wxs g
   guard (substForm wxs f'' == f') 
   p <- prn k' f' g'
-  Cut' (Fa ws $ f'' <=> g) (FaF' ws k (f'' <=> g) p) <$> faIffToExIffEx'' k vs f ws g
+  Cut' (Fa ws $ f'' <=> g) (FaF' ws ks (f'' <=> g) p) <$> faIffToExIffEx'' k vs f ws g
 prn _ f g
   | f == g = return $ iffRefl f
   | otherwise = error"prove-rename"
@@ -243,23 +246,23 @@ puf k es (Iff e f) (Iff g h) = do
 puf k es (Fa vs f) (Fa ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- puf k' es f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
 puf k es (Ex vs f) (Ex ws g) = do
   guard (vs == ws)
+  let ks = rangeOver k vs
+  let (k', vxs) = varPars k vs
   let (k', vxs) = varPars k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- puf k' es f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToExIffEx vs k f g
 puf _ es (Rel r xs) (Rel s ys) = do
   xyps <- mapM2 (\ x_ y_ -> (x_ === y_,) <$> put es x_ y_) xs ys
-  --  p <- relCong r xs ys
-  --  return $ cuts xyps p
   cuts xyps <$> relCong r xs ys
-
 puf _ es (Eq a b) (Eq x y) = do
   pax <- put es a x
   pby <- put es b y
@@ -298,17 +301,19 @@ pfl k (Iff e f) (Iff g h) = do
 pfl k (Fa vs f) (Fa ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- pfl k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
 pfl k (Ex vs f) (Ex ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- pfl k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToExIffEx vs k f g
 pfl _ f g
   | f == g = return $ iffRefl f
   | otherwise = error"prove-flatten"
@@ -336,13 +341,14 @@ pnm k (Fa vs f) _g
     (ws, g) <- cast $ breakFa _g
     guardMsg "Normalized list mismatch" $ ws == L.filter (`varInf` f) vs
     let (k', wxs) = varPars k ws
+    let ks = rangeOver k ws
     let f' = substForm wxs f
     let g' = substForm wxs g
     p <- pnm k' f' g'
     return $
       cuts
         [ (Fa vs f <=> Fa ws f, bloatFaIffFa k vs ws f),
-          (Fa ws (f <=> g), FaF' ws k (f <=> g) p),
+          (Fa ws (f <=> g), FaF' ws ks (f <=> g) p),
           (Fa ws f <=> Fa ws g, faIffToFaIffFa ws k f g) ] $
         iffTrans (Fa vs f) (Fa ws f) (Fa ws g)
   | otherwise = do
@@ -354,13 +360,14 @@ pnm k (Ex vs f) _g
     (ws, g) <- cast $ breakEx _g
     guardMsg "Normalized list mismatch" $ ws == L.filter (`varInf` f) vs
     let (k', wxs) = varPars k ws
+    let ks = rangeOver k ws
     let f' = substForm wxs f
     let g' = substForm wxs g
     p <- pnm k' f' g'
     return $
       cuts
         [ (Ex vs f <=> Ex ws f, bloatExIffEx k vs ws f),
-          (Fa ws (f <=> g), FaF' ws k (f <=> g) p),
+          (Fa ws (f <=> g), FaF' ws ks (f <=> g) p),
           (Ex ws f <=> Ex ws g, faIffToExIffEx ws k f g) ] $
         iffTrans (Ex vs f) (Ex ws f) (Ex ws g)
   | otherwise = do
@@ -380,16 +387,18 @@ useConcs k (f : fs) = do
 useConc :: Int -> Form -> IO (Int, [Form], Prf -> Prf)
 useConc k (Fa vs f) = do
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   (k'', fs, pf) <- useConc k' f'
-  return (k'', fs, FaF' vs k f . pf)
+  return (k'', fs, FaF' vs ks f . pf)
 useConc k (Or fs) = do
   (k', fs', pp) <- useConcs k fs
   return (k', fs', OrF' fs fs . pp)
+useConc k Bot = return (k, [], id)
 useConc k g =
   if isLit g
   then return (k, [g], id)
-  else error $ show $ "use conc : not lit : " <> ppForm g
+  else error $ show $ "use conc, not lit : " <> ppForm g
 
 expandLit :: Int -> Form -> Form -> IO (Int, [Form], Prf -> Prf)
 expandLit k (Not g) (Iff g' h)
@@ -536,6 +545,7 @@ gndVar vm v =
 premLits :: Form -> Maybe [Form]
 premLits (Fa vs f) = premLits f
 premLits (Or fs) = L.concat <$> mapM premLits fs
+premLits Bot = return []
 premLits f = guard (isLit f) >> return [f]
 
 usePrem :: (Form -> IO Prf) -> VM -> Form -> IO Prf
@@ -560,6 +570,7 @@ mapPremLit hs f@(Not (Eq x y))
   | x == y = return $ NotT' (x === x) $ EqR' x
   | Not (Eq y x) `elem` hs = return $ NotT' (x === y) $ NotF' (y === x) $ EqS' y x
   | otherwise = error $ show $ "use-prem-neq : " <> ppForm f
+mapPremLit _ Bot = return BotT'
 mapPremLit _ f = error $ show $ "map-prem-lit-exception : " <> ppForm f <> "\n"
 
 efactor :: Maybe Bool -> Form -> Form -> IO Prf
@@ -801,6 +812,8 @@ subt vm (Var v) =
 subt vm (Fun f xs) = Fun f $ L.map (subt vm) xs
 
 subf ::  VM -> Form -> Form
+subf vm Top = Top
+subf vm Bot = Bot
 subf vm (Eq x y) =
   let x' = subt vm x in
   let y' = subt vm y in
@@ -932,7 +945,7 @@ mapSearch vm fs gs = do
   first (\ (vm_, fs_) -> mapSearch vm_ fs_ gs) zs
 
 origTimeLimit :: NominalDiffTime
-origTimeLimit = 60
+origTimeLimit = 15
 
 origSearch :: UTCTime -> Bool -> Int -> VC -> [(Form, Form)] -> IO (Maybe VC)
 origSearch _ md dt vc [] = return (Just vc)
@@ -1041,8 +1054,8 @@ origFork md vc (Fa vs f, Fa ws g) = do
 origFork md vc (Ex vs f, Ex ws g) = do
   vc' <- cast $ conVars vs ws vc
   return (vc', [(f, g)])
-origFork _ vr (Or [], Or []) = [(vr, [])]
-origFork _ vr (And [], And []) = [(vr, [])]
+origFork _ vr (Bot, Bot) = [(vr, [])]
+origFork _ vr (Top, Top) = [(vr, [])]
 origFork _ vc (Or [f], Or [g]) = [(vc, [(f, g)])]
 origFork _ vc (And [f], And [g]) = [(vc, [(f, g)])]
 origFork True vc (Or fs, Or gs) 
@@ -1109,6 +1122,8 @@ rnfs mp k (f : fs) =
   DBF.first (f' :) $ rnfs mp k' fs 
 
 rnf :: MTT -> Int -> Form -> (Form, Int)
+rnf _ k Top = (Top, k)
+rnf _ k Bot = (Bot, k)
 rnf mp k (Rel r xs) = (Rel r (L.map (rnt mp) xs), k)
 rnf mp k (Eq x y) = (Eq (rnt mp x) (rnt mp y), k)
 rnf tt ti (Not f) = DBF.first Not $ rnf tt ti f
@@ -1177,7 +1192,7 @@ conTerm vm x y = do
   return vm
 
 orig :: Form -> Form -> IO Prf
-orig f g = origCore f g <|> (ps "Orig failure!\n" >> return Open')
+orig f g = origCore f g  -- <|> (ps "Orig failure!\n" >> return Open')
 
 origCore :: Form -> Form -> IO Prf
 origCore f g 
@@ -1203,28 +1218,28 @@ makeVC f g = do
   let ws = formVars g
   return (constraint vs ws, constraint ws vs)
 
-formSigs :: Sigs -> [PrePath] -> Form -> Sigs
-formSigs sg pts (Eq x y) = do
-  let sg' = termSigs sg (PreEq : pts) x
-  termSigs sg' (PreEq : pts) y
-formSigs sg pts (Rel r xs) =
-  let ptxs = extendPrePathsRel pts r 0 xs in
-  L.foldl (uncurry . termSigs) sg ptxs
-formSigs sg pts (Not f) =  formSigs sg (PreNot : pts) f
-formSigs sg pts (Imp f g) =
-  let sg' = formSigs sg (PreImpL : pts) f in
-  formSigs sg' (PreImpR : pts) g
-formSigs sg pts (Iff f g) =
-  let sg' = formSigs sg (PreIffL : pts) f in
-  formSigs sg' (PreIffR : pts) g
-formSigs sg pts (Fa vs f) =
-  let sg' = L.foldl varSigs sg vs in
-  formSigs sg' (PreFa vs : pts) f
-formSigs sg pts (Ex vs f) =
-  let sg' = L.foldl varSigs sg vs in
-  formSigs sg' (PreEx vs : pts) f
-formSigs sg pts (Or fs)  = L.foldl (\ sg_ (f_, fs_) -> formSigs sg_ (PreOr  (posCount fs_) (negCount fs_) : pts) f_) sg (plucks fs)
-formSigs sg pts (And fs) = L.foldl (\ sg_ (f_, fs_) -> formSigs sg_ (PreAnd (posCount fs_) (negCount fs_) : pts) f_) sg (plucks fs)
+-- formSigs :: Sigs -> [PrePath] -> Form -> Sigs
+-- formSigs sg pts (Eq x y) = do
+--   let sg' = termSigs sg (PreEq : pts) x
+--   termSigs sg' (PreEq : pts) y
+-- formSigs sg pts (Rel r xs) =
+--   let ptxs = extendPrePathsRel pts r 0 xs in
+--   L.foldl (uncurry . termSigs) sg ptxs
+-- formSigs sg pts (Not f) =  formSigs sg (PreNot : pts) f
+-- formSigs sg pts (Imp f g) =
+--   let sg' = formSigs sg (PreImpL : pts) f in
+--   formSigs sg' (PreImpR : pts) g
+-- formSigs sg pts (Iff f g) =
+--   let sg' = formSigs sg (PreIffL : pts) f in
+--   formSigs sg' (PreIffR : pts) g
+-- formSigs sg pts (Fa vs f) =
+--   let sg' = L.foldl varSigs sg vs in
+--   formSigs sg' (PreFa vs : pts) f
+-- formSigs sg pts (Ex vs f) =
+--   let sg' = L.foldl varSigs sg vs in
+--   formSigs sg' (PreEx vs : pts) f
+-- formSigs sg pts (Or fs)  = L.foldl (\ sg_ (f_, fs_) -> formSigs sg_ (PreOr  (posCount fs_) (negCount fs_) : pts) f_) sg (plucks fs)
+-- formSigs sg pts (And fs) = L.foldl (\ sg_ (f_, fs_) -> formSigs sg_ (PreAnd (posCount fs_) (negCount fs_) : pts) f_) sg (plucks fs)
 
 markNonOcc :: PrePath -> Path
 markNonOcc (PreFa _) = NewFa False
@@ -1419,22 +1434,24 @@ porig k f g
        return $ Cut' (e <=> g) pl $ Cut' (f <=> h) pr $ iffCong e f g h
      (Fa vs f, Fa ws g) -> do
        let (k', xs) = listPars k ws
+       let ks = rangeOver k ws
        wxs <- zipM ws xs
        vws <- zipM vs $ L.map Var ws
        let g' = substForm wxs g
        let f' = substForm vws f
        let f'' = substForm wxs f'
        p <- porig k' f'' g'
-       Cut' (Fa ws $ f' <=> g) (FaF' ws k (f' <=> g) p) <$> faIffToFaIffFa'' k vs f ws g
+       Cut' (Fa ws $ f' <=> g) (FaF' ws ks (f' <=> g) p) <$> faIffToFaIffFa'' k vs f ws g
      (Ex vs f, Ex ws g) -> do
        let (k', xs) = listPars k ws
+       let ks = rangeOver k ws
        wxs <- zipM ws xs
        vws <- zipM vs $ L.map Var ws
        let g' = substForm wxs g
        let f' = substForm vws f
        let f'' = substForm wxs f'
        p <- porig k' f'' g'
-       Cut' (Fa ws $ f' <=> g) (FaF' ws k (f' <=> g) p) <$> faIffToExIffEx'' k vs f ws g
+       Cut' (Fa ws $ f' <=> g) (FaF' ws ks (f' <=> g) p) <$> faIffToExIffEx'' k vs f ws g
      (f, g) -> mzero 
 
 porg' :: VR -> Int -> Form -> Form -> IO Prf
@@ -1472,15 +1489,17 @@ porg vm k f g
        return $ Cut' (e <=> g) pl $ Cut' (f <=> h) pr $ iffCong e f g h
      (Fa vs f, Fa ws g) -> do
        let (k', xs) = listPars k ws
+       let ks = rangeOver k ws
        wxs <- zipM ws xs
        vws <- mapM (pairWithVR' vm) vs 
        let g' = substForm wxs g
        let fp = substForm vws f
        let fp' = substForm wxs fp
        p <- porg' vm k' fp' g'
-       Cut' (Fa ws $ fp <=> g) (FaF' ws k (fp <=> g) p) <$> genFaIffToFaIffFa vm k vs f ws g
+       Cut' (Fa ws $ fp <=> g) (FaF' ws ks (fp <=> g) p) <$> genFaIffToFaIffFa vm k vs f ws g
      (Ex vs f, Ex ws g) -> do
        let (k', xs) = listPars k ws
+       let ks = rangeOver k ws
        wxs <- zipM ws xs
        vws <- mapM (pairWithVR' vm) vs 
        let g' = substForm wxs g
@@ -1488,7 +1507,7 @@ porg vm k f g
        let fp = substForm vws f
        let fp' = substForm wxs fp
        p <- porg' vm k' fp' g'
-       Cut' (Fa ws $ fp <=> g) (FaF' ws k (fp <=> g) p) <$> genFaIffToExIffEx (Fa ws $ fp <=> g) vm k vs f ws g
+       Cut' (Fa ws $ fp <=> g) (FaF' ws ks (fp <=> g) p) <$> genFaIffToExIffEx (Fa ws $ fp <=> g) vm k vs f ws g
      (f, g) -> mzero 
 
 uvm :: Int -> VR -> Form -> Form -> IO Prf
@@ -1547,23 +1566,25 @@ uvmr k vm f@(Iff fl fr) g@(Iff gl gr) = do
 
 uvmr k vm (Fa vs f) (Fa ws g) = do
   let (k', xs) = listPars k ws
+  let ks = rangeOver k ws
   wxs <- zipM ws xs
   let ys = L.map (pairWithVR vm wxs) vs
   vys <- zipM vs ys
   let f' = substForm vys f
   let g' = substForm wxs g
   p <- uvm k' vm f' g'
-  return $ FaF' ws k g $ FaT' vys f p
+  return $ FaF' ws ks g $ FaT' vys f p
 
 uvmr k vm (Ex vs f) (Ex ws g) = do
   let (k', xs) = listPars k vs
+  let ks = rangeOver k vs
   vxs <- zipM vs xs
   let ys = L.map (pairWithVR (swap vm) vxs) ws
   wys <- zipM ws ys
   let f' = substForm vxs f
   let g' = substForm wys g
   p <- uvm k' vm f' g'
-  return $ ExT' vs k f $ ExF' wys g p
+  return $ ExT' vs ks f $ ExF' wys g p
 
 uvmr _ _ f g = mzero -- error $ unpack $ "use-VR umimplemented :\n" <> "f = " <> ppForm f <> "\ng = " <> ppForm g <> "\n"
 
@@ -1629,6 +1650,8 @@ df1 es (Not f)   = DBF.second Not <$> df1 es f
 df1 es (Imp f g) = (DBF.second (`Imp` g) <$> df1 es f) <|> (DBF.second (Imp f) <$> df1 es g)
 df1 es (Iff f g) = (DBF.second (`Iff` g) <$> df1 es f) <|> (DBF.second (Iff f) <$> df1 es g)
 df1 _ (Eq _ _) = mzero
+df1 _ Top = mzero
+df1 _ Bot = mzero
 df1 es g@(Rel _ _) = df1rw es g
 
 dff :: [Form] -> Form -> Form -> IO [(Form, Form)]
@@ -1780,17 +1803,21 @@ ppuf k (Iff e f) (Iff g h) = do
 ppuf k (Fa vs f) (Fa ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
+  let v = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- ppuf k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
 ppuf k (Ex vs f) (Ex ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
+  let v = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- ppuf k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToExIffEx vs k f g
 ppuf _ (Rel r xs) (Rel s ys) = do
   guard $ r == s && xs == ys
   return $ iffRefl (Rel r xs)
@@ -1825,6 +1852,8 @@ ssubts (_ : mxs) (x : xs) = DBF.second (x :) <$> ssubts mxs xs
 ssubts [] (_ : _) = mzero
 
 ssubf :: [Maybe Term] -> Form -> IO ([Maybe Term], Form)
+ssubf mxs Top = return (mxs, Top)
+ssubf mxs Bot = return (mxs, Bot)
 ssubf mxs (Not f) = DBF.second Not <$> ssubf mxs f
 ssubf mxs (Imp f g) = do
   (mxs', f') <- ssubf mxs f
@@ -1928,10 +1957,11 @@ uuf k (Rel r xs) e (Rel s ys) = do
 uuf k (Fa vs f) e (Fa ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs 
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- uuf k' f' e g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
 uuf k (Not f) e (Not g) = do
   p <- uuf k f e g
   return $ Cut' (f <=> g) p $ iffToNotIffNot f g
@@ -1965,19 +1995,21 @@ uegr k gm (Iff fl fr) e (Iff gl gr) = do
 uegr k gm (Fa vs f) e (Fa ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs 
   let f' = substForm vxs f
   let g' = substForm vxs g
   gm' <- foldM (\ gm_ (v_, x_) -> cast $ addVM v_ x_ gm_) gm vxs
   p <- ueg k' gm' f' e g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
 uegr k gm (Ex vs f) e (Ex ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs 
   let f' = substForm vxs f
   let g' = substForm vxs g
   gm' <- foldM (\ gm_ (v_, x_) -> cast $ addVM v_ x_ gm_) gm vxs
   p <- ueg k' gm' f' e g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToExIffEx vs k f g
 uegr _ _ f e g =
   error $ show $ "UEGR failed:\n f : " <> ppForm f <> "\ne : " <> ppForm e <> "\ng : " <> ppForm g <> "\n"
 
@@ -2009,8 +2041,8 @@ iffsTrans ((f, pf) : (g, pg) : l) h =
   Cut' (f <=> g) pf $ Cut' (g <=> h) (iffsTrans ((g, pg) : l) h) $ iffTrans f g h
 
 ppp :: Int -> Form -> Form -> IO Prf
-ppp k (Or []) _ = return $ OrT' []
-ppp k _ (And []) = return $ AndF' []
+ppp k Bot _ = return BotT'
+ppp k _ Top = return TopF'
 ppp k (Not f) (Not g) = notTF f g <$> ppp k g f
 ppp k (Or fs) (Or gs) = do
   fps <- mapM2 (\ f_ g_ -> (f_,) <$> ppp k f_ g_) fs gs
@@ -2025,17 +2057,19 @@ ppp k (Imp e f) (Imp g h) = do
 ppp k (Fa vs f) (Fa ws g) = do 
   guard $ vs == ws 
   let (k', vxs) = varPars k vs 
+  let ks = rangeOver k vs 
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- ppp k' f' g'
-  return $ FaF' vs k g $ FaT' vxs f  p
+  return $ FaF' vs ks g $ FaT' vxs f  p
 ppp k (Ex vs f) (Ex ws g) = do 
   guard $ vs == ws 
   let (k', vxs) = varPars k vs 
+  let ks = rangeOver k vs 
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- ppp k' f' g'
-  return $ ExT' vs k f $ ExF' vxs g p
+  return $ ExT' vs ks f $ ExF' vxs g p
 ppp k f g = guard (f == g) >> return (Id' f)
 
 avatarComp :: Form -> Form -> IO Prf -- Ctx
@@ -2086,12 +2120,36 @@ aocf zs us vm (Ex vs f) (Ex ws g) = do
   aocf zs (ws L.\\ vs) vm f g
 aocf zs ws vm f g = error "aocf : todo"
 
+isVar :: Term -> Bool
+isVar (Var _) = True
+isVar _ = False
+
+hasArgs :: [Term] -> Term -> Bool
+hasArgs xs (Fun _ ys) = xs == ys
+hasArgs xs _ = False
+
+sameVarArgs :: [Term] -> Bool
+sameVarArgs [] = False
+sameVarArgs (Fun _ vs : xs) = L.all isVar vs && L.all (hasArgs vs) xs
+sameVarArgs (_ : xs) = False
+
+head' :: [a] -> Maybe a
+head' (x : xs) = Just x
+head' [] = Nothing
+
+
+breakFunArgs :: Term -> Maybe [Term]
+breakFunArgs (Fun _ xs) = Just xs
+breakFunArgs _ = Nothing
+
 normalizeAoC :: Form -> IO ([Term], Form)
 normalizeAoC (Fa vs (Imp (Ex ws f) g)) = do
-  vm <- aocf (L.map Var vs) ws HM.empty  f g
-  -- pt $ "VM =\n" <> ppVM vm 
+  vm <- aocf (L.map Var vs) ws HM.empty f g
   xs <- cast $ mapM (`HM.lookup` vm) ws
-  return (xs, Fa vs (Imp (Ex ws f) (subf vm f)))
+  -- guardMsg ("Check 1 failed, VS = " ++ bd2str (ppList ft vs) ++ "\nXS = " ++ (bd2str $ ppList ppTerm xs)) $ L.all (hasArgs $ L.map Var vs) xs
+  guardMsg "error : Skolem terms disagree on variable order" (sameVarArgs xs)
+  vs' <- cast (head' xs >>= breakFunArgs >>= mapM breakVar)
+  return (xs, Fa vs' (Imp (Ex ws f) (subf vm f)))
 normalizeAoC (Imp (Ex ws f) g) = do
   vm <- aocf [] ws HM.empty f g
   xs <- cast $ mapM (`HM.lookup` vm) ws
@@ -2114,9 +2172,10 @@ proveRelD' :: Form -> Form -> IO Prf
 proveRelD' (Fa vs f) (Fa ws g) = do
   guard (vs == ws)
   let (_, xs) = listPars 0 vs
+  let ks = rangeOver 0 vs
   vxs <- zipM vs xs
   p <- proveRelD'' (substForm vxs f) (substForm vxs g)
-  return $ FaF' ws 0 g $ FaT' vxs f p
+  return $ FaF' ws ks g $ FaT' vxs f p
 proveRelD' f g = proveRelD'' f g
 
 proveRelD'' :: Form -> Form -> IO Prf
@@ -2159,39 +2218,44 @@ pqm k (Iff e f) (Iff g h) = do
 pqm k (Fa us (Fa vs f)) (Fa ws g) = do
   guard (us ++ vs == ws)
   let (k', wxs) = varPars k ws
+  let ks = rangeOver k ws 
   let f' = substForm wxs f
   let g' = substForm wxs g
   p <- pqm k' f' g'
   return $ 
     iffsTrans 
       [ (Fa us (Fa vs f), faFaIff k us vs f), 
-        (Fa ws f, Cut' (Fa ws $ f <=> g) (FaF' ws k (f <=> g) p) $ faIffToFaIffFa ws k f g)] 
+        (Fa ws f, Cut' (Fa ws $ f <=> g) (FaF' ws ks (f <=> g) p) $ faIffToFaIffFa ws k f g)] 
       (Fa ws g)
 pqm k (Ex us (Ex vs f)) (Ex ws g) = do
   guard (us ++ vs == ws)
   let (k', wxs) = varPars k ws
+  let ks = rangeOver k ws
+
   let f' = substForm wxs f
   let g' = substForm wxs g
   p <- pqm k' f' g'
   return $ 
     iffsTrans 
       [ (Ex us (Ex vs f), exExIff k us vs f), 
-        (Ex ws f, Cut' (Fa ws $ f <=> g) (FaF' ws k (f <=> g) p) $ faIffToExIffEx ws k f g)] 
+        (Ex ws f, Cut' (Fa ws $ f <=> g) (FaF' ws ks (f <=> g) p) $ faIffToExIffEx ws k f g)] 
       (Ex ws g)
 pqm k (Fa vs f) (Fa ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- pqm k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
 pqm k (Ex vs f) (Ex ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- pqm k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToExIffEx vs k f g
 pqm _ f g
   | f == g = return $ iffRefl f
   | otherwise = error "prove-quant-merge"
@@ -2207,53 +2271,53 @@ flattening f g = do
   return $ cutIff f g (iffsTrans [(f, p0), (f', p1), (f'', p2)] g) $ Id' g
 
 exSimp :: Int -> [BS] -> Form -> Form -> IO Prf
-exSimp k vs (And []) (And []) = return $ exTopIff vs
-exSimp k vs (Or []) (Or []) = return $ exBotIff k vs
+exSimp k vs Top Top = return $ exTopIff vs
+exSimp k vs Bot Bot = return $ exBotIff k vs
 exSimp k vs f (Ex ws g) = do 
   guardMsg "ex-simp" $ vs == ws && f == g
   return $ iffRefl (Ex vs f)
 exSimp _ _ _ _ = error "ex-simp"
 
 faSimp :: Int -> [BS] -> Form -> Form -> IO Prf
-faSimp k vs (And []) (And []) = return $ faTopIff k vs
-faSimp k vs (Or []) (Or []) = return $ faBotIff vs
+faSimp k vs Top Top = return $ faTopIff k vs
+faSimp k vs Bot Bot = return $ faBotIff vs
 faSimp k vs f (Fa ws g) = do 
   guardMsg "ex-simp" $ vs == ws && f == g
   return $ iffRefl (Fa vs f)
 faSimp _ _ _ _ = error "fa-simp"
 
 notSimp :: Form -> Form -> IO Prf
-notSimp (And []) (Or []) = return $ iffRFull (Not top) bot (NotT' top $ AndF' []) (OrT' []) 
-notSimp (Or []) (And []) = return $ iffRFull (Not bot) top (AndF' []) (NotF' bot $ OrT' []) 
+notSimp Top Bot = return $ iffRFull (Not Top) Bot (NotT' Top TopF') BotT' 
+notSimp Bot Top = return $ iffRFull (Not Bot) Top TopF' (NotF' Bot BotT') 
 notSimp f (Not g) = guard (f == g) >> return (iffRefl (Not f))
 notSimp _ _ = error "not-simp"
 
 iffSimp :: Form -> Form -> Form -> IO Prf
-iffSimp f (And []) g = do
+iffSimp f Top g = do
   guardMsg "iff-simp" $ f == g
   return $
-    iffRFull (f <=> top) f
-      (Cut' top (AndF' []) $ iffMPR f top)
-      (iffRFull f top (AndF' []) (Id' f))
-iffSimp (And []) f g = do
+    iffRFull (f <=> Top) f
+      (Cut' Top TopF' $ iffMPR f Top)
+      (iffRFull f Top TopF' (Id' f))
+iffSimp Top f g = do
   guardMsg "iff-simp" $ f == g
   return $
-    iffRFull (top <=> f) f
-      (Cut' top (AndF' []) $ iffMP f top)
-      (iffRFull top f (Id' f) (AndF' []))
+    iffRFull (Top <=> f) f
+      (Cut' Top TopF' $ iffMP f Top)
+      (iffRFull Top f (Id' f) TopF')
 
-iffSimp (Or []) f (Not g) = do 
+iffSimp Bot f (Not g) = do 
   guardMsg "iff-simp" $ f == g
   return $
-    iffRFull (bot <=> f) (Not f) 
-      (NotF' f $ Cut' bot (iffMPR bot f) (OrT' []))
-      (iffRFull bot f (OrT' []) (NotT' f $ Id' f))
-iffSimp f (Or []) (Not g) = do 
+    iffRFull (Bot <=> f) (Not f) 
+      (NotF' f $ Cut' Bot (iffMPR Bot f) BotT')
+      (iffRFull Bot f BotT' (NotT' f $ Id' f))
+iffSimp f Bot (Not g) = do 
   guardMsg "iff-simp" $ f == g
   return $
-    iffRFull (f <=> bot) (Not f) 
-      (NotF' f $ Cut' bot (iffMP f bot) (OrT' []))
-      (iffRFull f bot (NotT' f $ Id' f) (OrT' []))
+    iffRFull (f <=> Bot) (Not f) 
+      (NotF' f $ Cut' Bot (iffMP f Bot) BotT')
+      (iffRFull f Bot (NotT' f $ Id' f) BotT')
 iffSimp f g (Iff f' g') = do
   guardMsg "iff-simp" $ f == f'
   guardMsg "iff-simp" $ g == g'
@@ -2266,28 +2330,28 @@ iffSimp f g h =
     "h : " <> ppForm h <> "\n"
 
 impSimp :: Form -> Form -> Form -> IO Prf
-impSimp f (And []) (And []) = 
+impSimp f Top Top = 
   return $
-    iffRFull (f ==> top) top 
-      (AndF' [])
-      (ImpFC' top f $ AndF' [])
-impSimp (Or []) f (And []) = 
+    iffRFull (f ==> Top) Top 
+      TopF'
+      (ImpFC' Top f TopF')
+impSimp Bot f Top = 
   return $
-    iffRFull (bot ==> f) top 
-      (AndF' [])
-      (ImpFA' bot f $ OrT' [])
-impSimp f (Or []) (Not g) = do
+    iffRFull (Bot ==> f) Top 
+      TopF'
+      (ImpFA' Bot f BotT')
+impSimp f Bot (Not g) = do
   guardMsg "imp-simp" $ f == g
   return $
-    iffRFull (f ==> bot) (Not f) 
-      (NotF' f $ ImpT' f bot (Id' f) (OrT' [])) 
-      (NotT' f $ ImpFA' f bot $ Id' f)
-impSimp (And []) f g = do
+    iffRFull (f ==> Bot) (Not f) 
+      (NotF' f $ ImpT' f Bot (Id' f) BotT') 
+      (NotT' f $ ImpFA' f Bot $ Id' f)
+impSimp Top f g = do
   guardMsg "imp-simp" $ f == g
   return $
-    iffRFull (top ==> f) f 
-      (ImpT' top f (AndF' []) (Id' f)) 
-      (ImpFC' top f $ Id' f)
+    iffRFull (Top ==> f) f 
+      (ImpT' Top f TopF' (Id' f)) 
+      (ImpFC' Top f $ Id' f)
 impSimp f g (Imp f' g') = do
   guardMsg "imp-simp" $ f == f'
   guardMsg "imp-simp" $ g == g'
@@ -2305,27 +2369,27 @@ provebs k (Not f) h = do
   pfg <- provebs k f g
   pgh <- notSimp g h
   return $ iffsTrans [(Not f, Cut' (f <=> g) pfg $ iffToNotIffNot f g), (Not g, pgh)] h
-provebs k (Or fs) (And []) = do
+provebs k (Or fs) Top = do
   let gs = L.map boolSimp fs 
-  guardMsg "top not found" $ top `elem` gs
+  guardMsg "Top not found" $ Top `elem` gs
   fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> provebs k f_ g_) fs gs
   pfg <- cuts fgps <$> cast (iffsToOrIffOr fs gs)
-  return $ iffsTrans [(Or fs, pfg), (Or gs, degenOrIff gs)] top
-provebs k (And fs) (Or []) = do
+  return $ iffsTrans [(Or fs, pfg), (Or gs, degenOrIff gs)] Top
+provebs k (And fs) Bot = do
   let gs = L.map boolSimp fs 
-  guardMsg "bot not found" $ bot `elem` gs
+  guardMsg "Bot not found" $ Bot `elem` gs
   fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> provebs k f_ g_) fs gs
   pfg <- cuts fgps <$> cast (iffsToAndIffAnd fs gs)
-  return $ iffsTrans [(And fs, pfg), (And gs, degenAndIff gs)] bot
+  return $ iffsTrans [(And fs, pfg), (And gs, degenAndIff gs)] Bot
 provebs k (Or fs) (Or hs) = do
   let gs = L.map boolSimp fs 
-  guardMsg "top filter mismatch" $ L.filter (not . isBot) gs == hs
+  guardMsg "Top filter mismatch" $ L.filter (not . isBot) gs == hs
   fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> provebs k f_ g_) fs gs
   pfg <- cuts fgps <$> cast (iffsToOrIffOr fs gs)
   return $ iffsTrans [(Or fs, pfg), (Or gs, bloatOrIff gs)] (Or hs)
 provebs k (And fs) (And hs) = do
   let gs = L.map boolSimp fs 
-  guardMsg "top filter mismatch" $ L.filter (not . isTop) gs == hs
+  guardMsg "Top filter mismatch" $ L.filter (not . isTop) gs == hs
   fgps <- mapM2 (\ f_ g_ -> (f_ <=> g_,) <$> provebs k f_ g_) fs gs
   pfg <- cuts fgps <$> cast (iffsToAndIffAnd fs gs)
   return $ iffsTrans [(And fs, pfg), (And gs, bloatAndIff gs)] (And hs)
@@ -2349,19 +2413,21 @@ provebs k (Iff f g) h = do
 provebs k (Fa vs f) h = do
   let g = boolSimp f
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   pfg <- provebs k' f' g'
-  let pfg' = Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) pfg) (faIffToFaIffFa vs k f g)
+  let pfg' = Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) pfg) (faIffToFaIffFa vs k f g)
   pgh <- faSimp k vs g h
   return $ iffsTrans [(Fa vs f, pfg'), (Fa vs g, pgh)] h
 provebs k (Ex vs f) h = do
   let g = boolSimp f
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   pfg <- provebs k' f' g'
-  let pfg' = Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) pfg) (faIffToExIffEx vs k f g)
+  let pfg' = Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) pfg) (faIffToExIffEx vs k f g)
   pgh <- exSimp k vs g h
   return $ iffsTrans [(Ex vs f, pfg'), (Ex vs g, pgh)] h
 provebs _ f g
@@ -2412,17 +2478,20 @@ puw k (Iff e f) (Iff g h) = do
 puw k (Fa vs f) (Fa ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
+
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- puw k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
 puw k (Ex vs f) (Ex ws g) = do
   guard (vs == ws)
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- puw k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToExIffEx vs k f g
 puw _ f g
   | f == g = return $ iffRefl f
   | otherwise = error "prove-DNE"
@@ -2452,11 +2521,13 @@ skol :: [Form] -> Int -> Form -> Form -> IO Prf
 skol fs k (Fa vs f) (Fa ws g) = do
   guardMsg "skol : not permutation" $ isPerm vs ws
   let (k', wxs) = varPars k ws 
+
+  let ks = rangeOver k ws
   vxs <- cast $ mapM (\ v_ -> L.find ((v_ ==) . fst) wxs) vs
   let f' = substForm vxs f
   let g' = substForm wxs g
   p <- skolemize fs k' f' g'
-  return $ FaF' ws k g $ FaT' vxs f p
+  return $ FaF' ws ks g $ FaT' vxs f p
 skol ds k (And fs) (And gs) = do
   gps <- mapM2 (\ f_ g_ -> (g_,) <$> skolemize ds k f_ g_) fs gs
   return $ AndT' fs fs $ AndF' gps
@@ -2474,10 +2545,11 @@ updr :: Int -> Form -> Form -> IO Prf
 updr k (Fa vs f) (Fa ws g) = do 
   guardMsg "UPDR : vars mismatch" $ vs == ws
   let (k', vxs) = varPars k vs 
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- updr k' f' g'
-  return $ FaF' vs k g $ FaT' vxs f p
+  return $ FaF' vs ks g $ FaT' vxs f p
 updr k (Iff e f) (Imp g h) 
   | e == g && f == h = return $ IffTO' e f $ Id' (e ==> f)  
   | e == h && f == g = return $ IffTR' e f $ Id' (f ==> e)
@@ -2541,36 +2613,41 @@ pnnf False k (Not (Iff f g)) (And [Or [ng', nf'], Or [g', f']]) = do
 pnnf b k (Not (Fa vs f)) (Ex ws nf) = do 
   guard $ vs == ws
   let (k', vxs) = varPars k vs
+
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let nf' = substForm vxs nf
   pnf <- pnnf b k' (Not f') nf'
-  let p = Cut' (Fa vs $ Not f <=> nf) (FaF' vs k (Not f <=> nf) pnf) $ faIffToExIffEx vs k (Not f) nf
+  let p = Cut' (Fa vs $ Not f <=> nf) (FaF' vs ks (Not f <=> nf) pnf) $ faIffToExIffEx vs k (Not f) nf
   return $ iffsTrans [(Not (Fa vs f), notFaIffExNot k vs f), (Ex vs (Not f), p)] (Ex ws nf)
 
 pnnf b k (Not (Ex vs f)) (Fa ws nf) = do 
   guard $ vs == ws
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let nf' = substForm vxs nf
   pnf <- pnnf b k' (Not f') nf'
-  let p = Cut' (Fa vs $ Not f <=> nf) (FaF' vs k (Not f <=> nf) pnf) $ faIffToFaIffFa vs k (Not f) nf
+  let p = Cut' (Fa vs $ Not f <=> nf) (FaF' vs ks (Not f <=> nf) pnf) $ faIffToFaIffFa vs k (Not f) nf
   return $ iffsTrans [(Not (Ex vs f), notExIffFaNot k vs f), (Fa vs (Not f), p)] (Fa ws nf)
 
 pnnf b k (Fa vs f) (Fa ws g) = do 
   guard $ vs == ws
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- pnnf b k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToFaIffFa vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToFaIffFa vs k f g
 
 pnnf b k (Ex vs f) (Ex ws g) = do 
   guard $ vs == ws
   let (k', vxs) = varPars k vs
+  let ks = rangeOver k vs
   let f' = substForm vxs f
   let g' = substForm vxs g
   p <- pnnf b k' f' g'
-  return $ Cut' (Fa vs $ f <=> g) (FaF' vs k (f <=> g) p) $ faIffToExIffEx vs k f g
+  return $ Cut' (Fa vs $ f <=> g) (FaF' vs ks (f <=> g) p) $ faIffToExIffEx vs k f g
 
 pnnf b k (Imp f g) (Or [g', nf']) = do 
   pf <- pnnf b k (Not f) nf'
