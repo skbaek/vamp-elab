@@ -355,7 +355,6 @@ indexFunctor mp f =
     Just k -> Idx k 
     _ -> f
 
--- type Loc = (BS, [Int], Int)
 type Loc = (BS, [(Int, Int)], Int)
 
 ppFork :: (Int, Int) -> Builder
@@ -648,7 +647,7 @@ checkStelabs sf (slb : slbs) = do
 elab :: Bool -> Prob -> Invranch -> [Step] -> IO Proof  -- [Elab]
 elab vb tptp ivch stps = do
   slbs <- stepsToStelabs vb tptp stps
-  checkStelabs (S.map snd $ HM.keysSet ivch) slbs
+  -- checkStelabs (S.map snd $ HM.keysSet ivch) slbs
   let slbs' = L.map (removeMultiStep . desingle) slbs
   -- -- checkStelabs sf slbs'
   slbs'' <- indexStelabs 0 HM.empty slbs'

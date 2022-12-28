@@ -21,33 +21,6 @@ import qualified Data.ByteString.Builder as BD
 stepHyps :: Step -> [BS]
 stepHyps (_, _, ns, _) = ns
 
--- addToHyps :: Set BS -> (NTF, Set Form, SFTN) -> PreAF -> (NTF, Set Form, SFTN)
--- addToHyps ahns hyp@(ntf, sf, ftn) (CnfAF n r tx)
---   | S.member n ahns =
---       let f = (conjecturize r $ univClose $ parseForm tx) in
---       (HM.insert n f ntf, S.insert f sf, HM.insert (True, f) n ftn)
---   | otherwise = hyp
--- addToHyps ahns hyp@(ntf, sf, ftn) (FofAF n r tx)
---   | S.member n ahns =
---       let f = (conjecturize r $ parseForm tx) in
---       (HM.insert n f ntf, S.insert f sf, HM.insert (True, f) n ftn)
---   | otherwise = hyp
-
--- hypsSteps :: Bool -> String -> String -> IO (NTF, Set Form, SFTN, [Step])
--- hypsSteps vb tptp tstp = do
---   _
---   pafs <- parsePreName tptp
---   ps $ show $ "Total hyps count =  " <> ppInt (L.length pafs) <> "\n"
---   stps <- tstpToSteps tstp 
---   let ahns = L.foldl (\ ns_ -> L.foldl (flip S.insert) ns_ . stepHyps) S.empty stps
---   let (ntf, sf, ftn) = L.foldl (addToHyps ahns) (HM.empty, S.empty, HM.empty) pafs
---   ps $ show $ "Active hyps count = " <> ppInt (HM.size ntf) <> "\n"
---   Prelude.putStr $ tptp ++ "\n"
---   when verbose $ mapM_ (\ (nm_, f_) -> ps $ show (ft nm_ <> " :: " <> ppForm f_ <> "\n")) (HM.toList ntf)
---   Prelude.putStr $ tstp ++ "\n"
---   when verbose $ mapM_ (ps . show . ppStep) stps
---   return (ntf, sf, ftn, stps)
-
 stepHypNames :: Step -> Set BS
 stepHypNames (_, _, nms, _) = S.fromList nms
 
@@ -68,10 +41,39 @@ elaborate vb pnm snm enm = do
   prf <- elab vb tptp ivch stps
   BD.writeFile enm $ ppListNl ppElab $ linearize prf
 
-isExtra :: Step -> Bool
-isExtra ('e' :> _, _, _, _) = True
-isExtra _ = False
+mapAnfOnce :: (Anf -> IO ()) -> BS -> IO BS 
+mapAnfOnce fun bs = 
+  case parse anf bs of
+    Just (anf, bs') -> do 
+      fun anf 
+      return bs'
+    _ -> snd <$> cast (parse inc bs)
 
+mapAnfCore :: (Anf -> IO ()) -> BS -> IO () 
+mapAnfCore fun bs
+  | BS.null bs = skip
+  | otherwise = do 
+    bs' <- mapAnfOnce fun bs
+    mapAnfCore fun bs'
+
+mapAnf :: String -> (Anf -> IO ()) -> IO () 
+mapAnf fnm fun = do
+ txt <- BS.readFile fnm
+ (_, txt') <- cast $ parse ign txt 
+ mapAnfCore fun txt'
+
+checkBadName :: Anf -> IO ()
+checkBadName ('e' :> tl, _, _, _) = 
+  case bs2int tl of 
+    Just k -> error $ "e-number detected : " ++ bd2str (ppInt k) ++ "\n"
+    _ -> skip
+checkBadName (nm, _, _, _) = skip -- pbs $ "Good name : " <> nm <> "\n"
+-- 
+-- main :: IO ()
+-- main = do 
+--   [pnm] <- getArgs 
+--   mapAnf pnm checkBadName
+-- 
 main :: IO ()
 main = do 
   (tptp : tstp : cstp : flags) <- getArgs 

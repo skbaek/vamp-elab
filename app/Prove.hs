@@ -1192,7 +1192,7 @@ conTerm vm x y = do
   return vm
 
 orig :: Form -> Form -> IO Prf
-orig f g = origCore f g  -- <|> (ps "Orig failure!\n" >> return Open')
+orig f g = origCore f g <|> (ps "Orig failure!\n" >> return Open')
 
 origCore :: Form -> Form -> IO Prf
 origCore f g 
