@@ -33,13 +33,13 @@ tstp = permStarL step
 readSteps :: String -> IO [Step]
 readSteps nm = BS.readFile nm >>= runParser (ign >> tstp) 
 
-elaborate :: Bool -> String -> String -> String -> IO ()
-elaborate vb pnm snm enm = do
+elaborate :: Bool -> String -> String -> IO Proof
+elaborate vb pnm snm = do
   stps <- sortSteps <$> readSteps snm
   tptp <- readTptp pnm HM.empty
   let ivch = HM.foldrWithKey (\ nm_ f_ -> HM.insert (True, f_) nm_) HM.empty tptp
-  prf <- elab vb tptp ivch stps
-  BD.writeFile enm $ ppListNl ppElab $ linearize prf
+  elab vb tptp ivch stps
+  -- BD.writeFile enm $ ppListNl ppElab $ linearize prf
 
 mapAnfOnce :: (Anf -> IO ()) -> BS -> IO BS 
 mapAnfOnce fun bs = 
@@ -76,7 +76,7 @@ checkBadName (nm, _, _, _) = skip -- pbs $ "Good name : " <> nm <> "\n"
 -- 
 main :: IO ()
 main = do 
-  (tptp : tstp : cstp : flags) <- getArgs 
+  (pnm : snm : enm : flags) <- getArgs 
   let vb = "silent" `notElem` flags
-  (Just ()) <- timeout 120000000 (elaborate vb tptp tstp cstp) 
-  skip
+  (Just prf) <- timeout 120000000 (elaborate vb pnm snm) 
+  BD.writeFile enm $ ppListNl ppElab $ linearize prf

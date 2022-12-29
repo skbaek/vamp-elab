@@ -47,6 +47,8 @@ data Prf =
   | ExT' [BS] [Int] Form Prf
   | ExF' [(BS, Term)] Form Prf
   | Cut' Form Prf Prf 
+  | RelD' Form Prf
+  | AoC' Term Form Prf
   | Mrk BS Prf 
   | Open'
   deriving (Show)
@@ -97,6 +99,9 @@ ppPrfCore k (FaF' vs ms f p) =
 ppPrfCore k (ExT' vs ms f p) =
   let vxs = fromJust' "ext-case" (zipM vs $ L.map par ms) in
   ("Ex-L : " : L.map (pad . ppMapping) vxs) ++  pad (ppForm (Ex vs f)) : L.map pad (ppPrfCore (k - 1) p)
+
+ppPrfCore k (RelD' f p) = ["PP for Rel-D not implemented."]
+ppPrfCore k (AoC' _ f p) = ["PP for AoC not implemented."]
 ppPrfCore k Open' = ["Open!"]
 ppPrfCore k BotT' = ["Bot-T"]
 ppPrfCore k TopF' = ["Top-F"]
@@ -132,6 +137,8 @@ prfHasAsm (FaT' _ _ p) = prfHasAsm p
 prfHasAsm (FaF' _ _ _ p) = prfHasAsm p
 prfHasAsm (ExT' _ _ _ p) = prfHasAsm p
 prfHasAsm (ExF' _ _ p) = prfHasAsm p
+prfHasAsm (RelD' _ p) = prfHasAsm p
+prfHasAsm (AoC' _ _ p) = prfHasAsm p
 prfHasAsm (Mrk _ p) = prfHasAsm p
 prfHasAsm Open' = True
 
@@ -489,6 +496,8 @@ verify k lft rgt (ExF' vxs f p) = do
   let vs = L.map fst vxs
   guard (S.member (Ex vs f) rgt) <|> error "ExF'-fail"
   verify k lft (S.insert (substForm vxs f) rgt) p
+verify k lft rgt (RelD' f p) = error "RelD check not implemented."
+verify k lft rgt (AoC' x f p) = error "AoC check not implemented."
 verify k lft rgt (Cut' f p0 p1) = do
   verify k lft (S.insert f rgt) p0
   verify k (S.insert f lft) rgt p1

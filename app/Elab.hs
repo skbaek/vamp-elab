@@ -13,7 +13,7 @@ import Sat (sat)
 -- import Check (isRelD, verify)
 
 import Data.List as L (all, map, foldl, length, reverse, findIndex, concatMap, mapAccumL, elemIndex)
-import Data.Map as HM (insert, lookup, Map, empty, toList, member, notMember, keysSet)
+import Data.Map as HM (insert, lookup, Map, empty, toList, member, notMember, keys)
 import Data.Set as S (Set, insert, singleton, toList, fromList, member, map)
 import Data.ByteString.Builder (Builder)
 import Control.Monad as M ( guard, MonadPlus(mzero), foldM, foldM_, when )
@@ -80,6 +80,8 @@ rpsj (ExF' vxs f p) = ExF' vxs (rfsj f) (rpsj p)
 rpsj (FaF' xs k f p) = FaF' xs k (rfsj f) (rpsj p)
 rpsj (ExT' xs k f p) = ExT' xs k (rfsj f) (rpsj p)
 rpsj (Cut' f pl pr) = Cut' (rfsj f) (rpsj pl) (rpsj pr)
+rpsj (RelD' f p) = RelD' f (rpsj p)
+rpsj (AoC' x f p) = AoC' x f (rpsj p)
 rpsj (Mrk t p) = Mrk t $ rpsj p
 rpsj Open' = Open'
 
@@ -94,19 +96,14 @@ removeMultiStepPrf p@FunC' {} = p
 removeMultiStepPrf p@RelC' {} = p
 removeMultiStepPrf (NotT' f p) = NotT' f (removeMultiStepPrf p)
 removeMultiStepPrf (NotF' f p) = NotF' f (removeMultiStepPrf p)
-
 removeMultiStepPrf (OrT' ps) = OrT' $ L.map (DBF.second removeMultiStepPrf) ps
 removeMultiStepPrf (AndF' ps) = AndF' $ L.map (DBF.second removeMultiStepPrf) ps
-
 removeMultiStepPrf (AndT' _ [] p) = removeMultiStepPrf p
 removeMultiStepPrf (OrF'  _ [] p) = removeMultiStepPrf p
-
 removeMultiStepPrf (AndT' fs [g] p) = AndT' fs [g] $ removeMultiStepPrf p
 removeMultiStepPrf (OrF'  fs [g] p) = OrF'  fs [g] $ removeMultiStepPrf p
-
 removeMultiStepPrf (AndT' fs (g : gs) p) = AndT' fs [g] $ removeMultiStepPrf (AndT' fs gs p) 
 removeMultiStepPrf (OrF' fs  (g : gs) p) = OrF'  fs [g] $ removeMultiStepPrf (OrF'  fs gs p) 
-
 removeMultiStepPrf (ImpFA' f g p) = ImpFA' f g (removeMultiStepPrf p)
 removeMultiStepPrf (ImpFC' f g p) = ImpFC' f g (removeMultiStepPrf p)
 removeMultiStepPrf (ImpT' f g pf pg) = ImpT' f g (removeMultiStepPrf pf) (removeMultiStepPrf pg)
@@ -118,6 +115,8 @@ removeMultiStepPrf (ExF' vxs f p) = ExF' vxs f (removeMultiStepPrf p)
 removeMultiStepPrf (FaF' xs k f p) = FaF' xs k f (removeMultiStepPrf p)
 removeMultiStepPrf (ExT' xs k f p) = ExT' xs k f (removeMultiStepPrf p)
 removeMultiStepPrf (Cut' f pl pr) = Cut' f (removeMultiStepPrf pl) (removeMultiStepPrf pr)
+removeMultiStepPrf (RelD' f p) = RelD' f (removeMultiStepPrf p)
+removeMultiStepPrf (AoC' x f p) = AoC' x f (removeMultiStepPrf p)
 removeMultiStepPrf (Mrk t p) = Mrk t $ removeMultiStepPrf p
 removeMultiStepPrf Open' = Open'
 
@@ -302,19 +301,17 @@ indexPrf k mp (ImpFC' f g p) = ImpFC' (indexForm mp f) (indexForm mp g) $ indexP
 indexPrf k mp (IffF' f g p q) = IffF' (indexForm mp f) (indexForm mp g) (indexPrf k mp p) (indexPrf k mp q)
 indexPrf k mp (IffTO' f g p) = IffTO' (indexForm mp f) (indexForm mp g) $ indexPrf k mp p
 indexPrf k mp (IffTR' f g p) = IffTR' (indexForm mp f) (indexForm mp g) $ indexPrf k mp p
-
 indexPrf k mp (FaT' vxs f p) = FaT' (L.map (DBF.second $ indexTerm mp) vxs) (indexForm mp f) $ indexPrf k mp p
 indexPrf k mp (ExF' vxs f p) = ExF' (L.map (DBF.second $ indexTerm mp) vxs) (indexForm mp f) $ indexPrf k mp p
-
 indexPrf k mp (FaF' vs ms f p) =
   let (mp', ms') = mapAccumL (\ mp_ m_ -> (HM.insert (Idx m_) (m_ + k) mp_, m_ + k)) mp ms in
   FaF' vs ms' (indexForm mp f) $ indexPrf (maximum ms' + 1) mp' p
-
 indexPrf k mp (ExT' vs ms f p) =
   let (mp', ms') = mapAccumL (\ mp_ m_ -> (HM.insert (Idx m_) (m_ + k) mp_, m_ + k)) mp ms in
   ExT' vs ms' (indexForm mp f) $ indexPrf (maximum ms' + 1) mp' p
-
 indexPrf k mp (Cut' f p q) = Cut' (indexForm mp f) (indexPrf k mp p) (indexPrf k mp q)
+indexPrf k mp (RelD' f p) = error "unexpected indexing of a RelD proof"
+indexPrf k mp (AoC' _ _ p) = error "unexpected indexing of a AoC proof"
 indexPrf k mp (Mrk s p) = Mrk s $ indexPrf k mp p
 
 relabelPairsAoC :: [Term] -> Int -> [(Funct, Int)]
@@ -363,8 +360,8 @@ ppFork (k, m) = ppMarkHex k <> ppMarkHex m
 ppLoc :: Loc -> Builder
 ppLoc (tx, ks, k) = ft tx <> bconcat (L.map ppFork $ L.reverse ks) <> ppMarkHex k
 
-locBS :: Loc -> BS
-locBS = toByteString' . ppLoc
+locBS :: Int -> BS
+locBS k = toByteString' $ "e" <> ppInt k
 
 extLoc :: Loc -> Int -> Loc
 extLoc (tx, ks, k) 0 = (tx, ks, k + 1)
@@ -374,66 +371,46 @@ range :: Int -> Int -> [Int]
 range _ 0 = []
 range k m = k : range (k + 1) (m - 1)
 
-stitch :: Invranch -> Node -> [Stelab] -> IO Proof
+stitch :: [Stelab] -> IO Prf
 -- stitch _ ni@(nm, _, _) _ | trace ("stitching = " ++ bs2str nm) False = undefined 
-stitch sftn ni@(nm, True, Bot) [] = return (OrT_ ni nm [])
-stitch _ _ [] = error "Last signed formula of branch is not a T-bot"
-stitch sftn ni@(nm, _, _) (InfStep g prf cmt : slbs) = do 
-  let loc = (cmt, [], 0)
-  proofL <- deliteral' sftn loc (False, g) prf
-  proofR <- stitch (HM.insert (True, g) cmt sftn) (cmt, True, g) slbs
-  return $ Cut_ ni g proofL proofR
-stitch sftn ni (DefStep f g p cmt : slbs) = do 
-  let loc = (cmt, [], 0)
-  let loc' = extLoc loc 0
-  let sftn' = HM.insert (True, f) (toByteString' $ ppLoc loc) sftn
-  pf <- deliteral' sftn' loc' (False, g) p
-  pt <- stitch (HM.insert (True, g) cmt sftn') (cmt, True, g) slbs
-  return $ RelD_ ni f $ Cut_ (toByteString' (ppLoc loc), True, f) g pf pt
-stitch sftn ni (AoCStep xs f g prf_g cmt : slbs) = do 
+stitch [] = return BotT'
+stitch (InfStep g prf cmt : slbs) = Cut' g prf <$> stitch slbs
+stitch (DefStep f g prf _ : slbs) = RelD' f . Cut' g prf <$> stitch slbs
+stitch (AoCStep xs f g prf_g cmt : slbs) = do 
   (vs, fa) <- breakAoC f
-  nxfs <- singleAoCs 0 (cmt <> "_AoCs_") xs vs fa
-  let locf = (cmt <> "_AoC", [], 0)
-  let nmf = cmt <> "_AoC"
-  let locg = (cmt, [], 0)
-  let nmg = cmt
-  prf_f <- proveAoC nxfs f
-  let sftn_fs = foldl (\ sftn_ (nm_, _, f_) -> HM.insert (True, f_) nm_ sftn_) sftn nxfs
-  pf <- deliteral' sftn_fs locf (False, f) prf_f
-  let sftn_f = HM.insert (True, f) nmf sftn
-  pg <- deliteral' sftn_f locg (False, g) prf_g
-  let sftn_fg = HM.insert (True, g) nmg sftn_f
-  pt <- stitch sftn_fg (cmt, True, g) slbs
-  return $ stitchAoCs ni nxfs pf (Cut_ (nmf, True, f) g pg pt)
+  xfs <- singleAoCs xs vs fa
+  prf_f <- proveAoC xfs f
+  -- let sftn_fs = foldl (\ sftn_ (nm_, _, f_) -> HM.insert (True, f_) nm_ sftn_) sftn nxfs
+  -- pf <- deliteral' sftn_fs locf (False, f) prf_f
+  -- let sftn_f = HM.insert (True, f) nmf sftn
+  -- pg <- deliteral' sftn_f locg (False, g) prf_g
+  -- let sftn_fg = HM.insert (True, g) nmg sftn_f
+  prf <- stitch slbs
+  return $ stitchAoCs xfs f prf_f (Cut' g prf_g prf)
 
-stitchAoCs :: Node -> [(BS, Term, Form)] -> Proof -> Proof -> Proof
-stitchAoCs ni [] pf pr = 
-  let (bf, f) = proofRSF pf in
-  let (br, f') = proofRSF pr in
-  if not bf && br && f == f' 
-  then Cut_ ni f pf pr 
-  else error "cut formula mismatch"
-stitchAoCs ni ((nm, x, f) : nxfs) pf pr = 
-  let p = stitchAoCs (nm, True, f) nxfs pf pr in
-  let (b, g) = proofRSF p in
-  if b then AoC_ ni x g p else error "AoC is not T-signed" 
+stitchAoCs :: [(Term, Form)] -> Form -> Prf -> Prf -> Prf
+stitchAoCs [] f pf pr = 
+  Cut' f pf pr 
+stitchAoCs ((x, f) : xfs) f' pf pr = 
+  let p = stitchAoCs xfs f' pf pr in
+  AoC' x f p 
 
-lastSkolemIdx :: [(BS, Term, Form)] -> IO Int
+lastSkolemIdx :: [(Term, Form)] -> IO Int
 lastSkolemIdx [] = mzero
-lastSkolemIdx [(_, Fun (Idx k) _, _)] = return k
-lastSkolemIdx [(_, _, _)] = mzero
+lastSkolemIdx [(Fun (Idx k) _, _)] = return k
+lastSkolemIdx [(_, _)] = mzero
 lastSkolemIdx (_ : nxfs) = lastSkolemIdx nxfs
 
 -- f0 ... fn, fa |- fc
-proveAoC' :: [(BS, Term)] -> [(BS, Term, Form)] -> Form -> Form -> IO Prf
+proveAoC' :: [(BS, Term)] -> [(Term, Form)] -> Form -> Form -> IO Prf
 proveAoC' _ [] fa fc = do 
   guard $ fa == fc 
   return $ Id' fa
-proveAoC' [] ((_, _, Imp fa' fc') : nxfs) fa fc = do
+proveAoC' [] ((_, Imp fa' fc') : nxfs) fa fc = do
   guard $ fa' == fa
   p <- proveAoC' [] nxfs fc' fc
   return $ ImpT' fa' fc' (Id' fa) p
-proveAoC' vxs@(_ : _) ((_, _, Fa vs f) : nxfs) fa fc = do
+proveAoC' vxs@(_ : _) ((_, Fa vs f) : nxfs) fa fc = do
   guard $ vs == L.map fst vxs 
   (Imp fa' fc') <- return $ substForm vxs f
   guard $ fa' == fa
@@ -441,14 +418,14 @@ proveAoC' vxs@(_ : _) ((_, _, Fa vs f) : nxfs) fa fc = do
   return $ FaT' vxs f $ ImpT' fa' fc' (Id' fa) p
 proveAoC' _ _ _ _ = mzero
 
-proveAoC :: [(BS, Term, Form)] -> Form -> IO Prf
-proveAoC nxfs (Fa vs f) = do 
-  k <- lastSkolemIdx nxfs
+proveAoC :: [(Term, Form)] -> Form -> IO Prf
+proveAoC xfs (Fa vs f) = do 
+  k <- lastSkolemIdx xfs
   let (_, vxs) = varPars (k + 1) vs
   let ks = rangeOver (k + 1) vs 
   let xs = L.map par ks
   (Imp fa fc) <- substitute vs xs f
-  p <- proveAoC' vxs nxfs fa fc
+  p <- proveAoC' vxs xfs fa fc
   return $ FaF' vs ks f (impFAC fa fc p)
 proveAoC nxfs (Imp fa fc) = do
   p <- proveAoC' [] nxfs fa fc
@@ -460,182 +437,158 @@ breakAoC (Fa vs (Imp (Ex ws f) _)) = return (vs, Ex ws f)
 breakAoC (Imp (Ex ws f) _) = return ([], Ex ws f)
 breakAoC _ = mzero
 
-singleAoCs :: Int -> BS -> [Term] -> [BS] -> Form -> IO [(BS, Term, Form)]
-singleAoCs k nm [] vs _ = mzero
-
-singleAoCs k nm [x] [] (Ex [w] f) = do 
-  let nmk = nm <> toByteString' (ppInt k)
+singleAoCs :: [Term] -> [BS] -> Form -> IO [(Term, Form)]
+singleAoCs [] vs _ = mzero
+singleAoCs [x] [] (Ex [w] f) = do 
   let f' = substForm [(w, x)] f
-  return [(nmk, x, Imp (Ex [w] f) f')]
-
-singleAoCs k nm [x] vs (Ex [w] f) = do 
-  let nmk = nm <> toByteString' (ppInt k)
+  return [(x, Imp (Ex [w] f) f')]
+singleAoCs [x] vs (Ex [w] f) = do 
   let f' = substForm [(w, x)] f
-  return [(nmk, x, Fa vs (Imp (Ex [w] f) f'))]
-
-singleAoCs k nm (x : xs) [] (Ex (w : ws) f) = do 
-  let nmk = nm <> toByteString' (ppInt k)
+  return [(x, Fa vs (Imp (Ex [w] f) f'))]
+singleAoCs (x : xs) [] (Ex (w : ws) f) = do 
   let f' = substForm [(w, x)] (Ex ws f)
-  l <- singleAoCs (k + 1) nm xs [] f'
-  return $ (nmk, x, Imp (Ex (w : ws) f) f') : l
-
-singleAoCs k nm (x : xs) vs (Ex (w : ws) f) = do 
-  let nmk = nm <> toByteString' (ppInt k)
+  l <- singleAoCs xs [] f'
+  return $ (x, Imp (Ex (w : ws) f) f') : l
+singleAoCs (x : xs) vs (Ex (w : ws) f) = do 
   let f' = substForm [(w, x)] (Ex ws f)
-  l <- singleAoCs (k + 1) nm xs vs f'
-  return $ (nmk, x, Fa vs (Imp (Ex (w : ws) f) f')) : l
+  l <- singleAoCs xs vs f'
+  return $ (x, Fa vs (Imp (Ex (w : ws) f) f')) : l
+singleAoCs _ _ _ = mzero
 
-singleAoCs _ _ _ _ _ = mzero
-
-deliteral' :: Invranch -> Loc -> (Bool, Form) -> Prf -> IO Proof
-deliteral' sftn loc (b, f) prf = do
+deliteral' :: Invranch -> Int -> Bool -> Form -> Prf -> IO (Proof, Int)
+deliteral' sftn loc b f prf = do
   let sftn' = HM.insert (b, f) (locBS loc) sftn 
-  deliteral sftn' loc (b, f) prf
+  deliteral sftn' loc b f prf
 
-deliteral :: Invranch -> Loc -> (Bool, Form) -> Prf -> IO Proof
-deliteral sftn loc (b, h) Open' = return $ Open_ (locBS loc, b, h) 
-deliteral sftn loc (b, h) TopF' = do
+swap :: (a, b) -> (b, a)
+swap (x, y) = (y, x)
+
+deliteral :: Invranch -> Int -> Bool -> Form -> Prf -> IO (Proof, Int)
+deliteral sftn loc b h Open' = return (Open_ (locBS loc, b, h) , loc + 1)
+deliteral sftn loc b h TopF' = do
   nm <- cast $ HM.lookup (False, Top) sftn 
-  return $ TopF_ (locBS loc, b, h) nm
-deliteral sftn loc (b, h) BotT' = do
+  return (TopF_ (locBS loc, b, h) nm, loc + 1)
+deliteral sftn loc b h BotT' = do
   nm <- cast $ HM.lookup (True, Bot) sftn 
-  return $ BotT_ (locBS loc, b, h) nm
-deliteral sftn loc (b, h) (Id' f) = do
+  return (BotT_ (locBS loc, b, h) nm, loc + 1)
+deliteral sftn loc b h (Id' f) = do
   nt <- cast $ HM.lookup (True, f)  sftn 
   nf <- cast $ HM.lookup (False, f) sftn 
-  return $ Id_ (locBS loc, b, h) nt nf
-deliteral sftn loc (b, h) (EqR' x) = do
+  return (Id_ (locBS loc, b, h) nt nf, loc + 1)
+deliteral sftn loc b h (EqR' x) = do
   nm <- cast $ HM.lookup (False, Eq x x) sftn 
-  return $ EqR_ (locBS loc, b, h) nm
-deliteral sftn loc (b, h) (EqS' x y) = do
+  return (EqR_ (locBS loc, b, h) nm, loc + 1)
+deliteral sftn loc b h (EqS' x y) = do
   nt <- cast $ HM.lookup (True, Eq x y) sftn 
   nf <- cast $ HM.lookup (False, Eq y x) sftn 
-  return $ EqS_ (locBS loc, b, h) nt nf
-deliteral sftn loc (b, h) (EqT' x y z) = do
+  return (EqS_ (locBS loc, b, h) nt nf, loc + 1)
+deliteral sftn loc b h (EqT' x y z) = do
   nxy <- cast $ HM.lookup (True, Eq x y) sftn 
   nyz <- cast $ HM.lookup (True, Eq y z) sftn 
   nxz <- cast $ HM.lookup (False, Eq x z) sftn 
-  return $ EqT_ (locBS loc, b, h) nxy nyz nxz
-deliteral sftn loc (b, h) (FunC' f xs ys) = do
+  return (EqT_ (locBS loc, b, h) nxy nyz nxz, loc + 1)
+deliteral sftn loc b h (FunC' f xs ys) = do
   xys <- zipM xs ys
   let eqns = L.map ((True,) . uncurry Eq) xys
   nms <- cast $ mapM (`HM.lookup` sftn) eqns
   nm <- cast $ HM.lookup (False, Fun f xs === Fun f ys) sftn 
-  return $ FunC_ (locBS loc, b, h) nms nm
-deliteral sftn loc (b, h) (RelC' r xs ys) = do
+  return (FunC_ (locBS loc, b, h) nms nm, loc + 1)
+deliteral sftn loc b h (RelC' r xs ys) = do
   xys <- zipM xs ys
   let eqns = L.map ((True,) . uncurry Eq) xys
   nms <- cast $ mapM (`HM.lookup` sftn) eqns
   nt <- cast $ HM.lookup (True, Rel r xs) sftn 
   nf <- cast $ HM.lookup (False, Rel r ys) sftn 
-  return $ RelC_ (locBS loc, b, h) nms nt nf
-
-deliteral sftn loc (b, h) (NotT' f p) = do
-  let loc' = extLoc loc 0
+  return (RelC_ (locBS loc, b, h) nms nt nf, loc + 1)
+deliteral sftn loc b h (NotT' f p) = do
   nm <- cast $ HM.lookup (True, Not f) sftn 
-  p' <- deliteral' sftn loc' (False, f) p 
-  return $ NotT_ (locBS loc, b, h) nm p'
-
-deliteral sftn loc (b, h) (NotF' f p) = do
-  let loc' = extLoc loc 0
+  (p', loc') <- deliteral' sftn (loc + 1) False f p 
+  return (NotT_ (locBS loc, b, h) nm p', loc')
+deliteral sftn loc b h (NotF' f p) = do
   nm <- cast $ HM.lookup (False, Not f) sftn 
-  p' <- deliteral' sftn loc' (True, f) p 
-  return $ NotF_ (locBS loc, b, h) nm p'
-  
-deliteral sftn loc (b, h) (OrT' fps) = do
+  (p', loc') <- deliteral' sftn (loc + 1) True f p 
+  return (NotF_ (locBS loc, b, h) nm p', loc') -- <$> deliteral' sftn (loc + 1) True f p 
+deliteral sftn loc b h (OrT' fps) = do
   let (fs, _) = unzip fps
   nm <- cast $ HM.lookup  (True, Or fs) sftn 
-  let ks = range 0 $ L.length fps
-  ps' <- mapM2 (\ k_ (f_, p_) -> deliteral' sftn (extLoc loc k_) (True, f_) p_) ks fps
-  return $ OrT_ (locBS loc, b, h) nm ps'
-
-deliteral sftn loc (b, h) (OrF' fs [f] p) = do
-  let loc' = extLoc loc 0
+  (loc', ps') <- mapAccumM (\ loc_ (f_, p_) -> swap <$> deliteral' sftn loc_ True f_ p_) (loc + 1) fps
+  return (OrT_ (locBS loc, b, h) nm ps', loc')
+deliteral sftn loc b h (OrF' fs [f] p) = do
   nm <- cast $ HM.lookup (False, Or fs) sftn 
-  p' <- deliteral' sftn loc' (False, f) p 
+  (p', loc') <- deliteral' sftn (loc + 1) False f p 
   k <- cast $ elemIndex f fs
-  return $ OrF_ (locBS loc, b, h) nm k p'
-deliteral sftn loc (b, h) (OrF' fs gs p) = error $ show $ "single residue : " <> ppForm (Or gs)
-
-deliteral sftn loc (b, h) (AndT' fs [f] p) = do
-  let loc' = extLoc loc 0
+  return (OrF_ (locBS loc, b, h) nm k p', loc')
+deliteral sftn loc b h (OrF' fs gs p) = error $ show $ "single residue : " <> ppForm (Or gs)
+deliteral sftn loc b h (AndT' fs [f] p) = do
   nm <- cast $ HM.lookup (True, And fs) sftn 
-  p' <- deliteral' sftn loc' (True, f) p 
+  (p', loc') <- deliteral' sftn (loc + 1) True f p 
   k <- cast $ elemIndex f fs
-  return $ AndT_ (locBS loc, b, h) nm k p'
-deliteral sftn loc (b, h) (AndT' fs gs p) = error $ show $ "single residue : " <> ppForm (And gs)
-
-deliteral sftn loc (b, h) (AndF' fps) = do
+  return (AndT_ (locBS loc, b, h) nm k p', loc')
+deliteral sftn loc b h (AndT' fs gs p) = error $ show $ "single residue : " <> ppForm (And gs)
+deliteral sftn loc b h (AndF' fps) = do
   let (fs, _) = unzip fps
-  let ks = range 0 $ L.length fps
   nm <- cast $ HM.lookup  (False, And fs) sftn 
-  ps' <- mapM2 (\ k_ (f_, p_) -> deliteral' sftn (extLoc loc k_) (False, f_) p_) ks fps
-  return $ AndF_ (locBS loc, b, h) nm ps'
-
-deliteral sftn loc (b, h) (ImpT' f g p q) = do
+  (loc', ps') <- mapAccumM (\ loc_ (f_, p_) -> swap <$> deliteral' sftn loc_ False f_ p_) (loc + 1) fps
+  return (AndF_ (locBS loc, b, h) nm ps', loc')
+deliteral sftn loc b h (ImpT' f g p q) = do
   nm <- cast $ HM.lookup (True, Imp f g) sftn 
-  p' <- deliteral' sftn (extLoc loc 0) (False, f) p 
-  q' <- deliteral' sftn (extLoc loc 1) (True, g) q 
-  return $ ImpT_ (locBS loc, b, h) nm p' q'
-
-deliteral sftn loc (b, h) (ImpFA' f g p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) False f p 
+  (q', loc'') <- deliteral' sftn loc' True g q 
+  return (ImpT_ (locBS loc, b, h) nm p' q', loc'')
+deliteral sftn loc b h (ImpFA' f g p) = do
   nm <- cast $ HM.lookup  (False, Imp f g) sftn 
-  p' <- deliteral' sftn (extLoc loc 0) (True, f) p 
-  return $ ImpFA_ (locBS loc, b, h) nm p' 
-
-deliteral sftn loc (b, h) (ImpFC' f g p) = do
-  nm <- cast $ HM.lookup  (False, Imp f g) sftn 
-  p' <- deliteral' sftn (extLoc loc 0) (False, g) p 
-  return $ ImpFC_ (locBS loc, b, h) nm p' 
-
-deliteral sftn loc (b, h) (IffF' f g p q) = do
+  (p', loc') <- deliteral' sftn (loc + 1) True f p 
+  return (ImpFA_ (locBS loc, b, h) nm p', loc')
+deliteral sftn loc b h (ImpFC' f g p) = do
+  nm <- cast $ HM.lookup (False, Imp f g) sftn 
+  (p', loc') <- deliteral' sftn (loc + 1) False g p 
+  return (ImpFC_ (locBS loc, b, h) nm p', loc')
+deliteral sftn loc b h (IffF' f g p q) = do
   nm <- cast $ HM.lookup (False, Iff f g) sftn 
-  p' <- deliteral' sftn (extLoc loc 0) (False, Imp f g) p 
-  q' <- deliteral' sftn (extLoc loc 1) (False, Imp g f) q 
-  return $ IffF_ (locBS loc, b, h) nm p' q'
-
-deliteral sftn loc (b, h) (IffTO' f g p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) False (Imp f g) p 
+  (q', loc'') <- deliteral' sftn loc' False (Imp g f) q 
+  return (IffF_ (locBS loc, b, h) nm p' q', loc'')
+deliteral sftn loc b h (IffTO' f g p) = do
   nm <- cast $ HM.lookup (True, Iff f g) sftn 
-  p' <- deliteral' sftn (extLoc loc 0) (True, Imp f g) p 
-  return $ IffTO_ (locBS loc, b, h) nm p' 
-
-deliteral sftn loc (b, h) (IffTR' f g p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) True (Imp f g) p 
+  return (IffTO_ (locBS loc, b, h) nm p' , loc')
+deliteral sftn loc b h (IffTR' f g p) = do
   nm <- cast $ HM.lookup (True, Iff f g) sftn 
-  p' <- deliteral' sftn (extLoc loc 0) (True, Imp g f) p 
-  return $ IffTR_ (locBS loc, b, h) nm p' 
-
-deliteral sftn loc (b, h) (FaT' vxs f p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) True (Imp g f) p 
+  return (IffTR_ (locBS loc, b, h) nm p' , loc')
+deliteral sftn loc b h (FaT' vxs f p) = do
   let (vs, xs) = unzip vxs 
   nm <- cast $ HM.lookup (True, Fa vs f) sftn 
   let f' = substForm vxs f
-  p' <- deliteral' sftn (extLoc loc 0) (True, f') p 
-  return $ FaT_ (locBS loc, b, h) nm xs p'
-
-deliteral sftn loc (b, h) (FaF' vs ms f p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) True f' p 
+  return (FaT_ (locBS loc, b, h) nm xs p', loc')
+deliteral sftn loc b h (FaF' vs ms f p) = do
   nm <- cast $ HM.lookup (False, Fa vs f) sftn 
   f' <- substitute vs (L.map par ms) f
-  p' <- deliteral' sftn (extLoc loc 0) (False, f') p 
-  return $ FaF_ (locBS loc, b, h) nm ms p'
-
-deliteral sftn loc (b, h) (ExT' vs ms f p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) False f' p 
+  return (FaF_ (locBS loc, b, h) nm ms p', loc')
+deliteral sftn loc b h (ExT' vs ms f p) = do
   nm <- cast $ HM.lookup (True, Ex vs f) sftn 
   f' <- substitute vs (L.map par ms) f
-  p' <- deliteral' sftn (extLoc loc 0) (True, f') p 
-  return $ ExT_ (locBS loc, b, h) nm ms p'
-
-deliteral sftn loc (b, h) (ExF' vxs f p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) True f' p 
+  return (ExT_ (locBS loc, b, h) nm ms p', loc')
+deliteral sftn loc b h (ExF' vxs f p) = do
   let (vs, xs) = unzip vxs 
   nm <- cast $ HM.lookup (False, Ex vs f) sftn 
   let f' = substForm vxs f
-  p' <- deliteral' sftn (extLoc loc 0) (False, f') p 
-  return $ ExF_ (locBS loc, b, h) nm xs p'
-
-deliteral sftn loc (b, h) (Cut' f p q) = do
-  p' <- deliteral' sftn (extLoc loc 1) (False, f) p 
-  q' <- deliteral' sftn (extLoc loc 0) (True, f) q 
-  return $ Cut_ (locBS loc, b, h) f p' q'
-  
-deliteral sftn loc (b, h) (Mrk s p) = deliteral sftn loc (b, h) p
+  (p', loc') <- deliteral' sftn (loc + 1) False f' p 
+  return (ExF_ (locBS loc, b, h) nm xs p', loc')
+deliteral sftn loc b h (Cut' f p q) = do
+  (p', loc') <- deliteral' sftn (loc + 1) False f p 
+  (q', loc'') <- deliteral' sftn loc' True f q 
+  return (Cut_ (locBS loc, b, h) f p' q', loc'')
+deliteral sftn loc b h (RelD' f p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) True f p 
+  return (RelD_ (locBS loc, b, h) f p', loc')
+deliteral sftn loc b h (AoC' x f p) = do
+  (p', loc') <- deliteral' sftn (loc + 1) True f p 
+  return (AoC_ (locBS loc, b, h) x f p', loc')
+deliteral sftn loc b h (Mrk s p) = deliteral sftn loc b h p
 
 checkStelabs :: Set Form -> [Stelab] -> IO ()
 checkStelabs sf [] = return ()
@@ -643,6 +596,16 @@ checkStelabs sf (slb : slbs) = do
   g <- checkStelab sf slb 
   let sf' = S.insert g sf 
   checkStelabs sf' slbs
+
+fst4 :: (a, b, c, d) -> a
+fst4 (x, _, _, _) = x
+
+freshElabIndex :: BS -> Int
+freshElabIndex ('e' :> bs) = 
+  case bs2int bs of 
+    Just k -> k + 1 
+    _ -> 0
+freshElabIndex _ = 0
 
 elab :: Bool -> Prob -> Invranch -> [Step] -> IO Proof  -- [Elab]
 elab vb tptp ivch stps = do
@@ -652,6 +615,9 @@ elab vb tptp ivch stps = do
   -- -- checkStelabs sf slbs'
   slbs'' <- indexStelabs 0 HM.empty slbs'
   -- -- checkStelabs sf slbs''
-  stitch ivch ("root", True, Top) slbs''
+  -- prf <- stitch ivch ("root", True, Top) slbs''
+  let frs = maximum $ L.map freshElabIndex $ HM.keys tptp ++ L.map fst4 stps
+  prf <- stitch slbs''
+  fst <$> deliteral' ivch frs True Top prf
   -- return $ Open_ ("root", True, Top)
   
